@@ -12,10 +12,6 @@ Parameters:
     NoEcho: true
     Description: GitHub App or PAT token for API calls
 
-  BedrockRegion:
-    Type: String
-    Default: us-east-1
-
 Globals:
   Function:
     Runtime: nodejs22.x
@@ -78,7 +74,6 @@ Resources:
       MemorySize: 512
       Environment:
         Variables:
-          BEDROCK_REGION: !Ref BedrockRegion
           GITHUB_TOKEN: !Ref GitHubToken
           DEDUPE_TABLE: !Ref ReviewDedupeTable
       Policies:

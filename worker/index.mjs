@@ -2,7 +2,7 @@ import { Octokit } from "@octokit/rest";
 import { BedrockRuntimeClient, InvokeModelCommand } from "@aws-sdk/client-bedrock-runtime";
 import { DynamoDBClient, PutItemCommand } from "@aws-sdk/client-dynamodb";
 
-const bedrock = new BedrockRuntimeClient({ region: process.env.BEDROCK_REGION });
+const bedrock = new BedrockRuntimeClient();
 const dynamo = new DynamoDBClient();
 const octokit = new Octokit({ auth: process.env.GITHUB_TOKEN });
 const TABLE = process.env.DEDUPE_TABLE;
@@ -82,7 +82,7 @@ function getLineNumber(chunk, indexInChunk) {
 // Bedrock에 파일 단위로 리뷰 요청 → JSON 배열 응답
 async function reviewFile(filePath, diff) {
   const res = await bedrock.send(new InvokeModelCommand({
-    modelId: "anthropic.claude-sonnet-4-20250514",
+    modelId: "anthropic.claude-haiku-4-5-20251001-v1:0",
     contentType: "application/json",
     accept: "application/json",
     body: JSON.stringify({
@@ -126,7 +126,11 @@ async function reviewFile(filePath, diff) {
     }),
   }));
 
-  const text = JSON.parse(new TextDecoder().decode(res.body)).content[0].text;
+  const parsed = JSON.parse(new TextDecoder().decode(res.body));
+  const { input_tokens, output_tokens } = parsed.usage;
+  console.log(`[tokens] ${filePath} — input: ${input_tokens}, output: ${output_tokens}`);
+
+  const text = parsed.content[0].text;
   try {
     // JSON 배열 추출 (앞뒤 텍스트가 있을 수 있으므로)
     const match = text.match(/\[[\s\S]*\]/);

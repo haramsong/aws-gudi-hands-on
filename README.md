@@ -30,22 +30,13 @@ Worker Lambda
 |--------|------|
 | AWS Lambda (Node.js 22, arm64) | Dispatcher / Worker 함수 |
 | Amazon API Gateway (HTTP API) | GitHub Webhook 수신 |
-| Amazon Bedrock (Claude Sonnet) | AI 코드 리뷰 생성 |
+| Amazon Bedrock (Claude Haiku 4.5) | AI 코드 리뷰 생성 |
 | Amazon DynamoDB | 동일 커밋 중복 리뷰 방지 (TTL 24h) |
 | GitHub Checks API | PR에 리뷰 상태 표시 |
 
 ## 사전 준비
 
-### 1. Bedrock 모델 액세스 활성화
-
-1. AWS 콘솔 접속 → 리전을 **US East (N. Virginia) `us-east-1`** 으로 변경
-2. 서비스 검색 → **Amazon Bedrock** 진입
-3. 왼쪽 메뉴 → **Model access** 클릭
-4. **Modify model access** 클릭
-5. `Anthropic` 섹션에서 **Claude Sonnet** 체크 → **Next** → **Submit**
-6. Status가 **Access granted** 로 바뀔 때까지 대기 (보통 즉시~수 분)
-
-### 2. GitHub App 생성
+### 1. GitHub App 생성
 
 1. GitHub 접속 → 우측 상단 프로필 → **Settings**
 2. 왼쪽 하단 **Developer settings** → **GitHub Apps** → **New GitHub App**
@@ -70,7 +61,7 @@ Worker Lambda
 6. **Where can this GitHub App be installed?** → `Only on this account` 선택
 7. **Create GitHub App** 클릭
 
-### 3. GitHub App Token 발급
+### 2. GitHub App Token 발급
 
 1. 생성된 App 페이지 → **Generate a private key** → `.pem` 파일 다운로드
 2. 왼쪽 메뉴 **Install App** → 리뷰할 Repository 선택 → **Install**
@@ -80,7 +71,7 @@ Worker Lambda
 > 💡 PAT(Personal Access Token)을 사용할 수도 있습니다:
 > GitHub → Settings → Developer settings → Personal access tokens → **Generate new token (classic)** → `repo` 스코프 선택
 
-### 4. AWS CloudShell 접속
+### 3. AWS CloudShell 접속
 
 1. AWS 콘솔 상단 검색바 옆 **CloudShell** 아이콘 (터미널 모양) 클릭
 2. 터미널이 열리면 준비 완료 (AWS CLI, SAM CLI, git, Node.js 모두 설치되어 있음)
@@ -105,7 +96,6 @@ sam deploy --guided
 |----------|------|
 | `GitHubWebhookSecret` | GitHub App에서 설정한 Webhook secret |
 | `GitHubToken` | GitHub App Token 또는 PAT |
-| `BedrockRegion` | Bedrock 모델 리전 (기본: `us-east-1`) |
 
 배포 완료 후 출력되는 `WebhookUrl`을 GitHub App의 Webhook URL에 입력합니다.
 
@@ -148,17 +138,17 @@ sam delete
 | **Lambda** | 월 100만 건 요청 + 400,000 GB-초 (상시 무료) | Dispatcher 100건 + Worker 100건 = 200건 | **$0** (프리 티어 내) |
 | **API Gateway (HTTP API)** | 월 100만 건 (12개월 무료) | 100건 | **$0** (프리 티어 내) |
 | **DynamoDB** | 25GB 스토리지 + 25 WCU/RCU (상시 무료) | 100건 읽기/쓰기 | **$0** (프리 티어 내) |
-| **Bedrock (Claude Sonnet)** | 프리 티어 없음 | Input: ~50만 토큰, Output: ~10만 토큰 | **~$3.00** |
+| **Bedrock (Claude Haiku 4.5)** | 프리 티어 없음 | Input: ~50만 토큰, Output: ~10만 토큰 | **~$1.00** |
 
 ### Bedrock 비용 상세
 
-- Claude Sonnet 기준: Input $3.00 / 1M 토큰, Output $15.00 / 1M 토큰
-- PR 1건당: Input ~5,000 토큰 (diff + 프롬프트) × $0.000003 = $0.015
-- PR 1건당: Output ~1,000 토큰 (리뷰 결과) × $0.000015 = $0.015
-- **PR 1건당 약 $0.03, 월 100건 기준 약 $3.00**
+- Claude Haiku 4.5 기준: Input $1.00 / 1M 토큰, Output $5.00 / 1M 토큰
+- PR 1건당: Input ~5,000 토큰 (diff + 프롬프트) × $0.000001 = $0.005
+- PR 1건당: Output ~1,000 토큰 (리뷰 결과) × $0.000005 = $0.005
+- **PR 1건당 약 $0.01, 월 100건 기준 약 $1.00**
 
 ### 요약
 
-Bedrock을 제외한 모든 서비스는 프리 티어 범위 안에서 무료로 사용 가능합니다. 실질적인 비용은 Bedrock 호출 비용만 발생하며, 핸즈온 수준의 테스트(수~수십 건)라면 **$1 미만**으로 예상됩니다.
+Bedrock을 제외한 모든 서비스는 프리 티어 범위 안에서 무료로 사용 가능합니다. 실질적인 비용은 Bedrock 호출 비용만 발생하며, 핸즈온 수준의 테스트(수~수십 건)라면 **$0.5 미만**으로 예상됩니다.
 
 > 💡 정확한 비용 산출은 [AWS Pricing Calculator](https://calculator.aws)를 참고하세요.
