@@ -94,7 +94,7 @@ Resources:
               Action: bedrock:InvokeModel
               Resource: "*"
         - SSMParameterReadPolicy:
-            ParameterName: !Ref GitHubPrivateKeyParam
+            ParameterName: pr-review-bot/github-private-key
 
 Outputs:
   WebhookUrl:
