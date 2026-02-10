@@ -67,6 +67,41 @@ async function isDuplicate(key) {
   }
 }
 
+// 리뷰 코멘트에서 카테고리별 요약 생성
+function buildSummary(comments) {
+  if (comments.length === 0) return "🤖 **AI Code Review** — ✅ 코드가 깔끔합니다!";
+
+  const categories = { "🐛": "버그", "🔒": "보안", "⚡": "성능", "🧹": "클린코드", "💡": "제안" };
+  const counts = {};
+  const critical = []; // 🐛, 🔒만 치명적 이슈로 표시
+
+  for (const c of comments) {
+    for (const [emoji, label] of Object.entries(categories)) {
+      if (c.body.includes(emoji)) {
+        counts[emoji] = (counts[emoji] || 0) + 1;
+        if ((emoji === "🐛" || emoji === "🔒") && critical.length < 3) {
+          // body 첫 줄에서 요약 추출
+          const firstLine = c.body.split("\n")[0].slice(0, 80);
+          critical.push(`- \`${c.path}\`: ${firstLine}`);
+        }
+        break;
+      }
+    }
+  }
+
+  let body = `🤖 **AI Code Review** — ${comments.length}건의 피드백\n\n`;
+  body += "| 카테고리 | 건수 |\n|----------|------|\n";
+  for (const [emoji, label] of Object.entries(categories)) {
+    if (counts[emoji]) body += `| ${emoji} ${label} | ${counts[emoji]} |\n`;
+  }
+
+  if (critical.length > 0) {
+    body += `\n⚠️ **주요 이슈**\n${critical.join("\n")}`;
+  }
+
+  return body;
+}
+
 // diff를 파일별로 파싱 → [{ path, chunks: [{ startLine, lines }] }]
 function parseDiff(diff) {
   const files = [];
@@ -208,13 +243,12 @@ export const handler = async (event) => {
     }
 
     // PR에 인라인 리뷰 코멘트 게시
+    const summaryBody = buildSummary(comments);
     await octokit.rest.pulls.createReview({
       owner, repo, pull_number: prNumber,
       commit_id: headSha,
       event: comments.length > 0 ? "COMMENT" : "APPROVE",
-      body: comments.length > 0
-        ? `🤖 **AI Code Review** — ${comments.length}건의 피드백`
-        : "🤖 **AI Code Review** — ✅ 코드가 깔끔합니다!",
+      body: summaryBody,
       comments,
     });
 
