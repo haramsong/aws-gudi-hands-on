@@ -94,11 +94,6 @@ Resources:
               Action: bedrock:InvokeModel
               Resource: "*"
             - Effect: Allow
-              Action:
-                - aws-marketplace:ViewSubscriptions
-                - aws-marketplace:Subscribe
-              Resource: "*"
-            - Effect: Allow
               Action: ssm:GetParameter
               Resource: !Sub "arn:aws:ssm:${AWS::Region}:${AWS::AccountId}:parameter/pr-review-bot/github-private-key"
 

@@ -92,7 +92,18 @@ aws ssm put-parameter \
 1. App 설정 페이지 → 왼쪽 메뉴 **Install App** → 리뷰할 Repository 선택 → **Install**
 2. 설치 후 URL에서 확인 (예: `https://github.com/settings/installations/12345678` → `12345678`)
 
-### 3. AWS CloudShell 접속
+### 3. Bedrock 모델 활성화
+
+최신 Bedrock 정책에서는 모델을 처음 호출할 때 자동으로 활성화됩니다. 배포 전에 한 번 호출해서 활성화해주세요.
+
+1. AWS 콘솔 → **Amazon Bedrock** → 왼쪽 메뉴 **Model catalog**
+2. **Claude Haiku 4.5** 검색 → 선택
+3. **Open in playground** 클릭 → 아무 메시지 입력 → **Run** 클릭
+4. 응답이 정상적으로 오면 활성화 완료
+
+> ⚠️ 처음 사용 시 Anthropic 이용 약관 동의(use case details 제출)가 필요할 수 있습니다. 화면 안내에 따라 진행하세요.
+
+### 4. AWS CloudShell 접속
 
 1. AWS 콘솔 상단 검색바 옆 **CloudShell** 아이콘 (터미널 모양) 클릭
 2. 터미널이 열리면 준비 완료 (AWS CLI, SAM CLI, git, Node.js 모두 설치되어 있음)
