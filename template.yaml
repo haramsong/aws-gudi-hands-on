@@ -93,8 +93,9 @@ Resources:
             - Effect: Allow
               Action: bedrock:InvokeModel
               Resource: "*"
-        - SSMParameterReadPolicy:
-            ParameterName: pr-review-bot/github-private-key
+            - Effect: Allow
+              Action: ssm:GetParameter
+              Resource: !Sub "arn:aws:ssm:${AWS::Region}:${AWS::AccountId}:parameter/pr-review-bot/github-private-key"
 
 Outputs:
   WebhookUrl:
