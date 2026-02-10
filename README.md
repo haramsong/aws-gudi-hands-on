@@ -61,15 +61,36 @@ Worker Lambda
 6. **Where can this GitHub App be installed?** → `Only on this account` 선택
 7. **Create GitHub App** 클릭
 
-### 2. GitHub App Token 발급
+### 2. GitHub App 설정값 확인
 
-1. 생성된 App 페이지 → **Generate a private key** → `.pem` 파일 다운로드
-2. 왼쪽 메뉴 **Install App** → 리뷰할 Repository 선택 → **Install**
-3. 설치 후 URL에서 Installation ID 확인 (예: `https://github.com/settings/installations/12345678` → `12345678`)
-4. App ID는 App 설정 페이지 상단 **About** 섹션에서 확인
+App 생성 후 아래 3가지 값을 확인합니다. 배포 시 파라미터로 사용됩니다.
 
-> 💡 PAT(Personal Access Token)을 사용할 수도 있습니다:
-> GitHub → Settings → Developer settings → Personal access tokens → **Generate new token (classic)** → `repo` 스코프 선택
+#### App ID
+
+- App 설정 페이지 상단 **About** 섹션에서 확인
+- 예: `123456`
+
+#### Private Key (.pem)
+
+1. App 설정 페이지 → **Generate a private key** 클릭 → `.pem` 파일 다운로드
+2. 배포 시 개행을 `\n` 문자열로 치환해서 한 줄로 입력해야 합니다:
+
+```bash
+# macOS / Linux / CloudShell
+awk 'NF {printf "%s\\n", $0}' your-app.pem
+```
+
+```powershell
+# Windows PowerShell
+(Get-Content your-app.pem -Raw) -replace "`r?`n", "\n"
+```
+
+> 출력된 한 줄 텍스트를 그대로 `GitHubPrivateKey` 파라미터에 붙여넣으세요.
+
+#### Installation ID
+
+1. App 설정 페이지 → 왼쪽 메뉴 **Install App** → 리뷰할 Repository 선택 → **Install**
+2. 설치 후 URL에서 확인 (예: `https://github.com/settings/installations/12345678` → `12345678`)
 
 ### 3. AWS CloudShell 접속
 
@@ -95,7 +116,9 @@ sam deploy --guided
 | 파라미터 | 설명 |
 |----------|------|
 | `GitHubWebhookSecret` | GitHub App에서 설정한 Webhook secret |
-| `GitHubToken` | GitHub App Token 또는 PAT |
+| `GitHubAppId` | GitHub App 설정 페이지 상단 About의 App ID |
+| `GitHubPrivateKey` | GitHub App에서 생성한 Private key (.pem 내용, 개행을 `\n`으로 치환) |
+| `GitHubInstallationId` | App 설치 후 URL의 Installation ID |
 
 배포 완료 후 출력되는 `WebhookUrl`을 GitHub App의 Webhook URL에 입력합니다.
 

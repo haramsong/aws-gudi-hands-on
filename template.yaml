@@ -7,10 +7,18 @@ Parameters:
     Type: String
     NoEcho: true
 
-  GitHubToken:
+  GitHubAppId:
+    Type: String
+    Description: GitHub App ID
+
+  GitHubPrivateKey:
     Type: String
     NoEcho: true
-    Description: GitHub App or PAT token for API calls
+    Description: GitHub App private key (PEM, replace newlines with \n)
+
+  GitHubInstallationId:
+    Type: String
+    Description: GitHub App Installation ID
 
 Globals:
   Function:
@@ -74,7 +82,9 @@ Resources:
       MemorySize: 512
       Environment:
         Variables:
-          GITHUB_TOKEN: !Ref GitHubToken
+          GITHUB_APP_ID: !Ref GitHubAppId
+          GITHUB_PRIVATE_KEY: !Ref GitHubPrivateKey
+          GITHUB_INSTALLATION_ID: !Ref GitHubInstallationId
           DEDUPE_TABLE: !Ref ReviewDedupeTable
       Policies:
         - DynamoDBCrudPolicy:

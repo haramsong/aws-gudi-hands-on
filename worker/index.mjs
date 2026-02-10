@@ -1,15 +1,27 @@
 import { Octokit } from "@octokit/rest";
+import { createAppAuth } from "@octokit/auth-app";
 import { BedrockRuntimeClient, InvokeModelCommand } from "@aws-sdk/client-bedrock-runtime";
 import { DynamoDBClient, PutItemCommand } from "@aws-sdk/client-dynamodb";
 
 const bedrock = new BedrockRuntimeClient();
 const dynamo = new DynamoDBClient();
-const octokit = new Octokit({ auth: process.env.GITHUB_TOKEN });
 const TABLE = process.env.DEDUPE_TABLE;
 const CHECK_NAME = "AI Code Review";
 
+// GitHub App 인증 → Installation Access Token 자동 발급
+function createOctokit() {
+  return new Octokit({
+    authStrategy: createAppAuth,
+    auth: {
+      appId: process.env.GITHUB_APP_ID,
+      privateKey: process.env.GITHUB_PRIVATE_KEY.replace(/\\n/g, "\n"),
+      installationId: process.env.GITHUB_INSTALLATION_ID,
+    },
+  });
+}
+
 // GitHub Check 생성 (in_progress 상태)
-async function createCheck(owner, repo, headSha) {
+async function createCheck(octokit, owner, repo, headSha) {
   const res = await octokit.rest.checks.create({
     owner, repo, name: CHECK_NAME, head_sha: headSha, status: "in_progress",
   });
@@ -17,7 +29,7 @@ async function createCheck(owner, repo, headSha) {
 }
 
 // GitHub Check 완료 처리
-async function completeCheck(owner, repo, checkRunId, conclusion, summary) {
+async function completeCheck(octokit, owner, repo, checkRunId, conclusion, summary) {
   await octokit.rest.checks.update({
     owner, repo, check_run_id: checkRunId, status: "completed", conclusion,
     output: { title: CHECK_NAME, summary },
@@ -149,7 +161,8 @@ export const handler = async (event) => {
     return { status: "skipped" };
   }
 
-  const checkRunId = await createCheck(owner, repo, headSha);
+  const octokit = createOctokit();
+  const checkRunId = await createCheck(octokit, owner, repo, headSha);
 
   try {
     // PR diff 가져오기
@@ -189,10 +202,10 @@ export const handler = async (event) => {
       comments,
     });
 
-    await completeCheck(owner, repo, checkRunId, "success", `리뷰 완료: ${comments.length}건의 피드백`);
+    await completeCheck(octokit, owner, repo, checkRunId, "success", `리뷰 완료: ${comments.length}건의 피드백`);
     return { status: "reviewed", comments: comments.length };
   } catch (err) {
-    await completeCheck(owner, repo, checkRunId, "failure", `리뷰 중 오류 발생: ${err.message}`);
+    await completeCheck(octokit, owner, repo, checkRunId, "failure", `리뷰 중 오류 발생: ${err.message}`);
     throw err;
   }
 };
