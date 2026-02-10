@@ -1,0 +1,164 @@
+# 🤖 GitHub PR AI Review Bot
+
+PR이 올라오거나 새 커밋이 push되면, Amazon Bedrock(Claude)이 자동으로 코드 리뷰를 달아주는 서버리스 봇입니다.
+
+## 아키텍처
+
+```
+GitHub Webhook
+    │
+    ▼
+API Gateway (HTTP API)
+    │
+    ▼
+Dispatcher Lambda ──── 서명 검증 + 이벤트 필터링
+    │
+    │ (비동기 호출)
+    ▼
+Worker Lambda
+    ├── GitHub Check 생성 (in_progress)
+    ├── PR diff 조회 (octokit)
+    ├── Bedrock Claude 코드 리뷰
+    ├── PR에 리뷰 코멘트 게시
+    ├── GitHub Check 완료 (success / failure)
+    └── DynamoDB 중복 방지
+```
+
+## 사용 기술
+
+| 서비스 | 용도 |
+|--------|------|
+| AWS Lambda (Node.js 22, arm64) | Dispatcher / Worker 함수 |
+| Amazon API Gateway (HTTP API) | GitHub Webhook 수신 |
+| Amazon Bedrock (Claude Sonnet) | AI 코드 리뷰 생성 |
+| Amazon DynamoDB | 동일 커밋 중복 리뷰 방지 (TTL 24h) |
+| GitHub Checks API | PR에 리뷰 상태 표시 |
+
+## 사전 준비
+
+### 1. Bedrock 모델 액세스 활성화
+
+1. AWS 콘솔 접속 → 리전을 **US East (N. Virginia) `us-east-1`** 으로 변경
+2. 서비스 검색 → **Amazon Bedrock** 진입
+3. 왼쪽 메뉴 → **Model access** 클릭
+4. **Modify model access** 클릭
+5. `Anthropic` 섹션에서 **Claude Sonnet** 체크 → **Next** → **Submit**
+6. Status가 **Access granted** 로 바뀔 때까지 대기 (보통 즉시~수 분)
+
+### 2. GitHub App 생성
+
+1. GitHub 접속 → 우측 상단 프로필 → **Settings**
+2. 왼쪽 하단 **Developer settings** → **GitHub Apps** → **New GitHub App**
+3. 아래 항목을 입력합니다:
+
+| 항목 | 값 |
+|------|-----|
+| App name | `pr-review-bot` (원하는 이름) |
+| Homepage URL | `https://github.com` (아무 URL) |
+| Webhook URL | `https://example.com` (배포 후 수정) |
+| Webhook secret | 임의의 문자열 입력 (메모해두세요) |
+
+4. **Permissions** 섹션에서 아래 권한을 설정합니다:
+
+| 권한 | 레벨 |
+|------|------|
+| Pull requests | `Read & Write` |
+| Checks | `Read & Write` |
+| Contents | `Read-only` |
+
+5. **Subscribe to events** 섹션에서 **Pull request** 체크
+6. **Where can this GitHub App be installed?** → `Only on this account` 선택
+7. **Create GitHub App** 클릭
+
+### 3. GitHub App Token 발급
+
+1. 생성된 App 페이지 → **Generate a private key** → `.pem` 파일 다운로드
+2. 왼쪽 메뉴 **Install App** → 리뷰할 Repository 선택 → **Install**
+3. 설치 후 URL에서 Installation ID 확인 (예: `https://github.com/settings/installations/12345678` → `12345678`)
+4. App ID는 App 설정 페이지 상단 **About** 섹션에서 확인
+
+> 💡 PAT(Personal Access Token)을 사용할 수도 있습니다:
+> GitHub → Settings → Developer settings → Personal access tokens → **Generate new token (classic)** → `repo` 스코프 선택
+
+### 4. AWS CloudShell 접속
+
+1. AWS 콘솔 상단 검색바 옆 **CloudShell** 아이콘 (터미널 모양) 클릭
+2. 터미널이 열리면 준비 완료 (AWS CLI, SAM CLI, git, Node.js 모두 설치되어 있음)
+
+## 배포
+
+```bash
+# 1. 레포 클론
+git clone <repo-url>
+cd aws-gudi-hands-on
+
+# 2. 빌드
+sam build
+
+# 3. 배포 (첫 배포 시)
+sam deploy --guided
+```
+
+`--guided` 실행 시 아래 파라미터를 입력합니다:
+
+| 파라미터 | 설명 |
+|----------|------|
+| `GitHubWebhookSecret` | GitHub App에서 설정한 Webhook secret |
+| `GitHubToken` | GitHub App Token 또는 PAT |
+| `BedrockRegion` | Bedrock 모델 리전 (기본: `us-east-1`) |
+
+배포 완료 후 출력되는 `WebhookUrl`을 GitHub App의 Webhook URL에 입력합니다.
+
+## 프로젝트 구조
+
+```
+├── template.yaml          # SAM 템플릿
+├── dispatcher/
+│   ├── package.json
+│   └── index.mjs          # Webhook 수신 → 서명 검증 → Worker 호출
+└── worker/
+    ├── package.json
+    └── index.mjs          # Diff 조회 → Bedrock 리뷰 → PR 코멘트
+```
+
+## 동작 흐름
+
+1. PR 생성(`opened`) 또는 새 커밋 push(`synchronize`) 시 GitHub이 Webhook 전송
+2. **Dispatcher**: HMAC-SHA256 서명 검증 → 대상 이벤트만 필터링 → Worker를 비동기 호출
+3. **Worker**:
+   - DynamoDB로 동일 SHA 중복 체크
+   - GitHub Check를 `in_progress`로 생성
+   - octokit으로 PR diff 조회
+   - Bedrock Claude에 diff를 보내 코드 리뷰 생성
+   - PR에 리뷰 코멘트 게시
+   - GitHub Check를 `success` 또는 `failure`로 완료
+
+## 리소스 정리
+
+```bash
+sam delete
+```
+
+## 예상 비용
+
+> 월 100건의 PR 리뷰 기준으로 산출했습니다. (PR당 평균 diff 약 5,000자 가정)
+
+| 서비스 | 프리 티어 | 예상 사용량 | 예상 비용 |
+|--------|-----------|-------------|-----------|
+| **Lambda** | 월 100만 건 요청 + 400,000 GB-초 (상시 무료) | Dispatcher 100건 + Worker 100건 = 200건 | **$0** (프리 티어 내) |
+| **API Gateway (HTTP API)** | 월 100만 건 (12개월 무료) | 100건 | **$0** (프리 티어 내) |
+| **DynamoDB** | 25GB 스토리지 + 25 WCU/RCU (상시 무료) | 100건 읽기/쓰기 | **$0** (프리 티어 내) |
+| **Bedrock (Claude Sonnet)** | 프리 티어 없음 | Input: ~50만 토큰, Output: ~10만 토큰 | **~$3.00** |
+
+### Bedrock 비용 상세
+
+- Claude Sonnet 기준: Input $3.00 / 1M 토큰, Output $15.00 / 1M 토큰
+- PR 1건당: Input ~5,000 토큰 (diff + 프롬프트) × $0.000003 = $0.015
+- PR 1건당: Output ~1,000 토큰 (리뷰 결과) × $0.000015 = $0.015
+- **PR 1건당 약 $0.03, 월 100건 기준 약 $3.00**
+
+### 요약
+
+Bedrock을 제외한 모든 서비스는 프리 티어 범위 안에서 무료로 사용 가능합니다. 실질적인 비용은 Bedrock 호출 비용만 발생하며, 핸즈온 수준의 테스트(수~수십 건)라면 **$1 미만**으로 예상됩니다.
+
+> 💡 정확한 비용 산출은 [AWS Pricing Calculator](https://calculator.aws)를 참고하세요.

@@ -1,0 +1,95 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Transform: AWS::Serverless-2016-10-31
+Description: GitHub PR AI Review Bot (Serverless, Bedrock, Node22)
+
+Parameters:
+  GitHubWebhookSecret:
+    Type: String
+    NoEcho: true
+
+  GitHubToken:
+    Type: String
+    NoEcho: true
+    Description: GitHub App or PAT token for API calls
+
+  BedrockRegion:
+    Type: String
+    Default: us-east-1
+
+Globals:
+  Function:
+    Runtime: nodejs22.x
+    Architectures: [arm64]
+
+Resources:
+  # ---------------------------
+  # DynamoDB (PR SHA dedupe)
+  # ---------------------------
+  ReviewDedupeTable:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      TableName: pr-review-dedupe
+      BillingMode: PAY_PER_REQUEST
+      AttributeDefinitions:
+        - AttributeName: pk
+          AttributeType: S
+      KeySchema:
+        - AttributeName: pk
+          KeyType: HASH
+      TimeToLiveSpecification:
+        AttributeName: ttl
+        Enabled: true
+
+  # ---------------------------
+  # Dispatcher Lambda
+  # ---------------------------
+  DispatcherFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: pr-review-dispatcher
+      CodeUri: dispatcher/
+      Handler: index.handler
+      Timeout: 10
+      MemorySize: 256
+      Environment:
+        Variables:
+          REVIEW_WORKER_NAME: !Ref WorkerFunction
+          WEBHOOK_SECRET: !Ref GitHubWebhookSecret
+      Policies:
+        - LambdaInvokePolicy:
+            FunctionName: !Ref WorkerFunction
+      Events:
+        Webhook:
+          Type: HttpApi
+          Properties:
+            Path: /webhook
+            Method: POST
+
+  # ---------------------------
+  # Review Worker Lambda
+  # ---------------------------
+  WorkerFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: pr-review-worker
+      CodeUri: worker/
+      Handler: index.handler
+      Timeout: 120
+      MemorySize: 512
+      Environment:
+        Variables:
+          BEDROCK_REGION: !Ref BedrockRegion
+          GITHUB_TOKEN: !Ref GitHubToken
+          DEDUPE_TABLE: !Ref ReviewDedupeTable
+      Policies:
+        - DynamoDBCrudPolicy:
+            TableName: !Ref ReviewDedupeTable
+        - Statement:
+            - Effect: Allow
+              Action: bedrock:InvokeModel
+              Resource: "*"
+
+Outputs:
+  WebhookUrl:
+    Description: GitHub Webhook URL
+    Value: !Sub "https://${ServerlessHttpApi}.execute-api.${AWS::Region}.amazonaws.com/webhook"

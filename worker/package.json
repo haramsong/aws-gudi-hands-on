@@ -1,0 +1,9 @@
+{
+  "name": "pr-review-worker",
+  "type": "module",
+  "dependencies": {
+    "@octokit/rest": "^21.0.0",
+    "@aws-sdk/client-bedrock-runtime": "^3.0.0",
+    "@aws-sdk/client-dynamodb": "^3.0.0"
+  }
+}
