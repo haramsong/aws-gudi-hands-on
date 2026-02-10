@@ -73,19 +73,19 @@ App 생성 후 아래 3가지 값을 확인합니다. 배포 시 파라미터로
 #### Private Key (.pem)
 
 1. App 설정 페이지 → **Generate a private key** 클릭 → `.pem` 파일 다운로드
-2. 배포 시 개행을 `\n` 문자열로 치환해서 한 줄로 입력해야 합니다:
+2. AWS SSM Parameter Store에 저장합니다:
 
 ```bash
-# macOS / Linux / CloudShell
-awk 'NF {printf "%s\\n", $0}' your-app.pem
+# CloudShell에서 실행 (.pem 파일을 업로드한 후)
+aws ssm put-parameter \
+  --name "/pr-review-bot/github-private-key" \
+  --type String \
+  --value "$(cat your-app.pem)"
 ```
 
-```powershell
-# Windows PowerShell
-(Get-Content your-app.pem -Raw) -replace "`r?`n", "\n"
-```
-
-> 출력된 한 줄 텍스트를 그대로 `GitHubPrivateKey` 파라미터에 붙여넣으세요.
+> 💡 CloudShell에 파일 업로드: 상단 메뉴 **Actions** → **Upload file** → `.pem` 파일 선택
+>
+> ⚠️ 프로덕션 환경에서는 `--type SecureString`을 사용하세요. SecureString은 KMS로 암호화되어 더 안전하지만, KMS 호출 비용이 발생합니다.
 
 #### Installation ID
 
@@ -117,7 +117,7 @@ sam deploy --guided
 |----------|------|
 | `GitHubWebhookSecret` | GitHub App에서 설정한 Webhook secret |
 | `GitHubAppId` | GitHub App 설정 페이지 상단 About의 App ID |
-| `GitHubPrivateKey` | GitHub App에서 생성한 Private key (.pem 내용, 개행을 `\n`으로 치환) |
+| `GitHubPrivateKeyParam` | SSM 파라미터 이름 (기본: `/pr-review-bot/github-private-key`) |
 | `GitHubInstallationId` | App 설치 후 URL의 Installation ID |
 
 배포 완료 후 출력되는 `WebhookUrl`을 GitHub App의 Webhook URL에 입력합니다.

@@ -2,19 +2,35 @@ import { Octokit } from "@octokit/rest";
 import { createAppAuth } from "@octokit/auth-app";
 import { BedrockRuntimeClient, InvokeModelCommand } from "@aws-sdk/client-bedrock-runtime";
 import { DynamoDBClient, PutItemCommand } from "@aws-sdk/client-dynamodb";
+import { SSMClient, GetParameterCommand } from "@aws-sdk/client-ssm";
 
 const bedrock = new BedrockRuntimeClient();
 const dynamo = new DynamoDBClient();
+const ssm = new SSMClient();
 const TABLE = process.env.DEDUPE_TABLE;
 const CHECK_NAME = "AI Code Review";
 
+// SSM에서 Private Key를 가져와 캐싱
+let cachedPrivateKey;
+async function getPrivateKey() {
+  if (!cachedPrivateKey) {
+    const res = await ssm.send(new GetParameterCommand({
+      Name: process.env.GITHUB_PRIVATE_KEY_PARAM,
+      WithDecryption: true,
+    }));
+    cachedPrivateKey = res.Parameter.Value;
+  }
+  return cachedPrivateKey;
+}
+
 // GitHub App 인증 → Installation Access Token 자동 발급
-function createOctokit() {
+async function createOctokit() {
+  const privateKey = await getPrivateKey();
   return new Octokit({
     authStrategy: createAppAuth,
     auth: {
       appId: process.env.GITHUB_APP_ID,
-      privateKey: process.env.GITHUB_PRIVATE_KEY.replace(/\\n/g, "\n"),
+      privateKey,
       installationId: process.env.GITHUB_INSTALLATION_ID,
     },
   });
@@ -161,7 +177,7 @@ export const handler = async (event) => {
     return { status: "skipped" };
   }
 
-  const octokit = createOctokit();
+  const octokit = await createOctokit();
   const checkRunId = await createCheck(octokit, owner, repo, headSha);
 
   try {

@@ -11,10 +11,10 @@ Parameters:
     Type: String
     Description: GitHub App ID
 
-  GitHubPrivateKey:
+  GitHubPrivateKeyParam:
     Type: String
-    NoEcho: true
-    Description: GitHub App private key (PEM, replace newlines with \n)
+    Default: /pr-review-bot/github-private-key
+    Description: SSM Parameter Store name for GitHub App private key
 
   GitHubInstallationId:
     Type: String
@@ -83,7 +83,7 @@ Resources:
       Environment:
         Variables:
           GITHUB_APP_ID: !Ref GitHubAppId
-          GITHUB_PRIVATE_KEY: !Ref GitHubPrivateKey
+          GITHUB_PRIVATE_KEY_PARAM: !Ref GitHubPrivateKeyParam
           GITHUB_INSTALLATION_ID: !Ref GitHubInstallationId
           DEDUPE_TABLE: !Ref ReviewDedupeTable
       Policies:
@@ -93,6 +93,8 @@ Resources:
             - Effect: Allow
               Action: bedrock:InvokeModel
               Resource: "*"
+        - SSMParameterReadPolicy:
+            ParameterName: !Ref GitHubPrivateKeyParam
 
 Outputs:
   WebhookUrl:
