@@ -110,7 +110,7 @@ function getLineNumber(chunk, indexInChunk) {
 // Bedrock에 파일 단위로 리뷰 요청 → JSON 배열 응답
 async function reviewFile(filePath, diff) {
   const res = await bedrock.send(new InvokeModelCommand({
-    modelId: "anthropic.claude-haiku-4-5-20251001-v1:0",
+    modelId: "global.anthropic.claude-haiku-4-5-20251001-v1:0",
     contentType: "application/json",
     accept: "application/json",
     body: JSON.stringify({
