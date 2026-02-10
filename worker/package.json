@@ -1,5 +1,6 @@
 {
   "name": "pr-review-worker",
+  "version": "1.0.0",
   "type": "module",
   "dependencies": {
     "@octokit/rest": "^21.0.0",
