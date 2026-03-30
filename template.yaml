@@ -25,6 +25,11 @@ Parameters:
     Default: apac.amazon.nova-pro-v1:0
     Description: Bedrock model ID (cross-region inference profile)
 
+  BedrockMaxTokens:
+    Type: Number
+    Default: 4096
+    Description: Bedrock max output tokens
+
 Globals:
   Function:
     Runtime: nodejs22.x
@@ -73,6 +78,7 @@ Resources:
           GITHUB_PRIVATE_KEY_PARAM: !Ref GitHubPrivateKeyParam
           GITHUB_INSTALLATION_ID: !Ref GitHubInstallationId
           BEDROCK_MODEL_ID: !Ref BedrockModelId
+          BEDROCK_MAX_TOKENS: !Ref BedrockMaxTokens
       Policies:
         - Statement:
             - Effect: Allow

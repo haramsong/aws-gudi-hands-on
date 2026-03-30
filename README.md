@@ -102,6 +102,18 @@ aws ssm put-parameter \
 
 > ⚠️ 처음 사용 시 이용 약관 동의(use case details 제출)가 필요할 수 있습니다. 화면 안내에 따라 진행하세요.
 
+> ⚠️ **Anthropic Claude 모델을 사용하려면** 계정당 1회 use case details 제출이 필요합니다. Bedrock 콘솔 → Model catalog에서 Claude 모델을 선택하면 FTU(First Time Use) 폼이 표시됩니다. 제출하면 즉시 접근 가능하며, AWS Organization 내 다른 계정에도 상속됩니다.
+>
+> 콘솔 대신 CLI로도 제출할 수 있습니다 (CloudShell에서 실행):
+>
+> ```bash
+> # use case details를 base64로 인코딩하여 제출
+> aws bedrock put-use-case-for-model-access \
+>   --form-data $(echo -n '{"companyName":"My Company","companyWebsite":"https://example.com","intendedUsers":"0","industryOption":"Technology","otherIndustryOption":"","useCases":"AI code review"}' | base64)
+> ```
+>
+> 자세한 내용은 [Access Amazon Bedrock foundation models](https://docs.aws.amazon.com/bedrock/latest/userguide/model-access.html) 문서를 참고하세요.
+
 ### 4. AWS CloudShell 접속
 
 1. AWS 콘솔 상단 검색바 옆 **CloudShell** 아이콘 (터미널 모양) 클릭
@@ -130,6 +142,25 @@ sam deploy --guided
 | `GitHubPrivateKeyParam` | SSM 파라미터 이름 (기본: `/pr-review-bot/github-private-key`) |
 | `GitHubInstallationId`  | App 설치 후 URL의 Installation ID                             |
 | `BedrockModelId`        | Bedrock 모델 ID (기본: `apac.amazon.nova-pro-v1:0`)           |
+| `BedrockMaxTokens`      | Bedrock 최대 출력 토큰 수 (기본: `4096`)                      |
+
+### 모델별 Max Output Tokens 참고
+
+| 모델 | Model ID | Max Output Tokens | 비고 |
+| --- | --- | --- | --- |
+| Nova Micro | `apac.amazon.nova-micro-v1:0` | 5,000 | 텍스트 전용, 가장 빠름 |
+| Nova Lite | `apac.amazon.nova-lite-v1:0` | 5,000 | 멀티모달, 저비용 |
+| **Nova Pro** | `apac.amazon.nova-pro-v1:0` | **5,000** | **기본값** |
+| Claude 3.5 Sonnet v2 | `apac.anthropic.claude-3-5-sonnet-20241022-v2:0` | 8,192 | 안정적, 검증된 모델 |
+| Claude 3.7 Sonnet | `apac.anthropic.claude-3-7-sonnet-20250219-v1:0` | 8,192 | extended thinking 지원 |
+| Claude Sonnet 4 | `apac.anthropic.claude-sonnet-4-20250514-v1:0` | 16,384 | 코딩 우수 |
+| Claude Haiku 4.5 | `global.anthropic.claude-haiku-4-5-20251001-v1:0` | 8,192 | 빠른 응답, 저비용 |
+| Claude Sonnet 4.5 | `global.anthropic.claude-sonnet-4-5-20250929-v1:0` | 16,384 | 최신, 고품질 리뷰 |
+| Claude Opus 4.5 | `global.anthropic.claude-opus-4-5-20251101-v1:0` | 32,000 | 최고 성능, 고비용 |
+
+> `apac.` 접두사는 APAC 리전 내에서만 라우팅됩니다. `global.` 접두사는 전 세계 리전으로 라우팅되어 처리량이 높지만, 데이터가 다른 대륙으로 전송될 수 있습니다.
+>
+> ⚠️ `BedrockMaxTokens`는 모델의 Max Output Tokens를 초과하지 않도록 설정하세요. 기본값 `4096`은 모든 모델에서 안전합니다.
 
 배포 완료 후 출력되는 `WebhookUrl`을 GitHub App의 Webhook URL에 입력합니다.
 
@@ -155,6 +186,37 @@ sam deploy --guided
    - Bedrock Nova Pro에 diff를 보내 코드 리뷰 생성
    - PR에 리뷰 코멘트 게시
    - GitHub Check를 `success` 또는 `failure`로 완료
+
+## 대용량 PR 리뷰 시 주의사항
+
+현재 구조는 파일 단위로 Bedrock에 리뷰를 요청합니다. diff가 큰 파일의 경우 Bedrock 응답이 `BedrockMaxTokens`에서 잘릴 수 있으며, 이 경우 해당 파일의 리뷰 코멘트가 **통째로 누락**됩니다.
+
+CloudWatch 로그에 아래 메시지가 보이면 토큰 부족입니다:
+
+```
+[WARN] src/app.ts — 응답이 max_tokens(4096)에서 잘렸습니다.
+```
+
+### 해결 방법
+
+1. **`BedrockMaxTokens` 값 올리기** — 가장 간단합니다. 모델별 Max Output Tokens 범위 내에서 올려주세요.
+
+2. **파일별 diff를 hunk 단위로 분할** — diff가 긴 파일을 hunk(변경 블록) 단위로 쪼개서 여러 번 호출하면 입력/출력 모두 짧아집니다. `worker/index.mjs`의 `handler`에서 파일별 호출 부분을 아래처럼 변경합니다:
+
+```javascript
+// 변경 전: 파일 단위로 한 번 호출
+const reviews = await reviewFile(file.path, fileDiff.slice(0, 10000));
+
+// 변경 후: hunk 단위로 분할 호출
+const hunks = fileDiff.split(/(?=^@@\s)/m).filter((h) => h.startsWith("@@"));
+const reviews = [];
+for (const hunk of hunks) {
+  const hunkReviews = await reviewFile(file.path, hunk.slice(0, 10000));
+  reviews.push(...hunkReviews);
+}
+```
+
+> 💡 hunk 분할 시 Bedrock 호출 횟수가 늘어나므로 비용과 Lambda 실행 시간이 증가합니다. 일반적인 PR(수백 줄 이내)에서는 기본 설정으로 충분합니다.
 
 ## 리소스 정리
 

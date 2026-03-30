@@ -163,11 +163,16 @@ async function reviewFile(filePath, diff) {
       role: "user",
       content: [{ text: `파일: ${filePath}\n\n\`\`\`diff\n${diff}\n\`\`\`` }],
     }],
-    inferenceConfig: { maxTokens: 4096 },
+    inferenceConfig: { maxTokens: parseInt(process.env.BEDROCK_MAX_TOKENS) || 4096 },
   }));
 
   const { inputTokens, outputTokens } = res.usage;
-  console.log(`[tokens] ${filePath} — input: ${inputTokens}, output: ${outputTokens}`);
+  const stopReason = res.stopReason;
+  console.log(`[tokens] ${filePath} — input: ${inputTokens}, output: ${outputTokens}, stopReason: ${stopReason}`);
+
+  if (stopReason === "max_tokens") {
+    console.warn(`[WARN] ${filePath} — 응답이 max_tokens(${process.env.BEDROCK_MAX_TOKENS || 4096})에서 잘렸습니다. 리뷰 코멘트가 누락될 수 있습니다.`);
+  }
 
   const text = res.output.message.content[0].text;
   try {
@@ -175,6 +180,9 @@ async function reviewFile(filePath, diff) {
     const match = text.match(/\[[\s\S]*\]/);
     return match ? JSON.parse(match[0]) : [];
   } catch {
+    if (stopReason === "max_tokens") {
+      console.error(`[ERROR] ${filePath} — JSON 파싱 실패 (응답 잘림). 잘린 응답 끝부분: ...${text.slice(-200)}`);
+    }
     return [];
   }
 }
