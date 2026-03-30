@@ -1,13 +1,10 @@
 import { Octokit } from "@octokit/rest";
 import { createAppAuth } from "@octokit/auth-app";
-import { BedrockRuntimeClient, InvokeModelCommand } from "@aws-sdk/client-bedrock-runtime";
-import { DynamoDBClient, PutItemCommand } from "@aws-sdk/client-dynamodb";
+import { BedrockRuntimeClient, ConverseCommand } from "@aws-sdk/client-bedrock-runtime";
 import { SSMClient, GetParameterCommand } from "@aws-sdk/client-ssm";
 
 const bedrock = new BedrockRuntimeClient();
-const dynamo = new DynamoDBClient();
 const ssm = new SSMClient();
-const TABLE = process.env.DEDUPE_TABLE;
 const CHECK_NAME = "AI Code Review";
 
 // SSM에서 Private Key를 가져와 캐싱
@@ -50,21 +47,6 @@ async function completeCheck(octokit, owner, repo, checkRunId, conclusion, summa
     owner, repo, check_run_id: checkRunId, status: "completed", conclusion,
     output: { title: CHECK_NAME, summary },
   });
-}
-
-// 중복 리뷰 방지 (DynamoDB)
-async function isDuplicate(key) {
-  try {
-    await dynamo.send(new PutItemCommand({
-      TableName: TABLE,
-      Item: { pk: { S: key }, ttl: { N: String(Math.floor(Date.now() / 1000) + 86400) } },
-      ConditionExpression: "attribute_not_exists(pk)",
-    }));
-    return false;
-  } catch (e) {
-    if (e.name === "ConditionalCheckFailedException") return true;
-    throw e;
-  }
 }
 
 // 리뷰 코멘트에서 카테고리별 요약 생성
@@ -144,14 +126,9 @@ function getLineNumber(chunk, indexInChunk) {
 
 // Bedrock에 파일 단위로 리뷰 요청 → JSON 배열 응답
 async function reviewFile(filePath, diff) {
-  const res = await bedrock.send(new InvokeModelCommand({
-    modelId: "global.anthropic.claude-haiku-4-5-20251001-v1:0",
-    contentType: "application/json",
-    accept: "application/json",
-    body: JSON.stringify({
-      anthropic_version: "bedrock-2023-05-31",
-      max_tokens: 4096,
-      system: `당신은 시니어 코드 리뷰어입니다. 반드시 한국어로 답변하세요.
+  const res = await bedrock.send(new ConverseCommand({
+    modelId: process.env.BEDROCK_MODEL_ID,
+    system: [{ text: `당신은 시니어 코드 리뷰어입니다. 반드시 한국어로 답변하세요.
 
 ## 리뷰 규칙
 - 버그, 보안 취약점, 성능 문제, 가독성 개선점을 찾아주세요.
@@ -181,19 +158,18 @@ async function reviewFile(filePath, diff) {
 
 ## 주의사항
 - "line"은 diff에서 +로 시작하는 변경된 줄의 번호입니다.
-- suggestion 블록 안에는 해당 줄을 대체할 코드만 넣으세요.`,
-      messages: [{
-        role: "user",
-        content: `파일: ${filePath}\n\n\`\`\`diff\n${diff}\n\`\`\``,
-      }],
-    }),
+- suggestion 블록 안에는 해당 줄을 대체할 코드만 넣으세요.` }],
+    messages: [{
+      role: "user",
+      content: [{ text: `파일: ${filePath}\n\n\`\`\`diff\n${diff}\n\`\`\`` }],
+    }],
+    inferenceConfig: { maxTokens: 4096 },
   }));
 
-  const parsed = JSON.parse(new TextDecoder().decode(res.body));
-  const { input_tokens, output_tokens } = parsed.usage;
-  console.log(`[tokens] ${filePath} — input: ${input_tokens}, output: ${output_tokens}`);
+  const { inputTokens, outputTokens } = res.usage;
+  console.log(`[tokens] ${filePath} — input: ${inputTokens}, output: ${outputTokens}`);
 
-  const text = parsed.content[0].text;
+  const text = res.output.message.content[0].text;
   try {
     // JSON 배열 추출 (앞뒤 텍스트가 있을 수 있으므로)
     const match = text.match(/\[[\s\S]*\]/);
@@ -204,15 +180,17 @@ async function reviewFile(filePath, diff) {
 }
 
 export const handler = async (event) => {
-  const { owner, repo, prNumber, headSha } = event;
-  const dedupeKey = `${owner}/${repo}#${prNumber}@${headSha}`;
-
-  if (await isDuplicate(dedupeKey)) {
-    console.log("Duplicate, skipping:", dedupeKey);
-    return { status: "skipped" };
-  }
+  const { owner, repo, prNumber } = event;
+  let { headSha } = event;
 
   const octokit = await createOctokit();
+
+  // /review 코멘트 경유 시 headSha가 없으므로 PR에서 조회
+  if (!headSha) {
+    const pr = await octokit.rest.pulls.get({ owner, repo, pull_number: prNumber });
+    headSha = pr.data.head.sha;
+  }
+
   const checkRunId = await createCheck(octokit, owner, repo, headSha);
 
   try {

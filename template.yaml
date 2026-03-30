@@ -20,30 +20,17 @@ Parameters:
     Type: String
     Description: GitHub App Installation ID
 
+  BedrockModelId:
+    Type: String
+    Default: apac.amazon.nova-pro-v1:0
+    Description: Bedrock model ID (cross-region inference profile)
+
 Globals:
   Function:
     Runtime: nodejs22.x
     Architectures: [arm64]
 
 Resources:
-  # ---------------------------
-  # DynamoDB (PR SHA dedupe)
-  # ---------------------------
-  ReviewDedupeTable:
-    Type: AWS::DynamoDB::Table
-    Properties:
-      TableName: pr-review-dedupe
-      BillingMode: PAY_PER_REQUEST
-      AttributeDefinitions:
-        - AttributeName: pk
-          AttributeType: S
-      KeySchema:
-        - AttributeName: pk
-          KeyType: HASH
-      TimeToLiveSpecification:
-        AttributeName: ttl
-        Enabled: true
-
   # ---------------------------
   # Dispatcher Lambda
   # ---------------------------
@@ -85,10 +72,8 @@ Resources:
           GITHUB_APP_ID: !Ref GitHubAppId
           GITHUB_PRIVATE_KEY_PARAM: !Ref GitHubPrivateKeyParam
           GITHUB_INSTALLATION_ID: !Ref GitHubInstallationId
-          DEDUPE_TABLE: !Ref ReviewDedupeTable
+          BEDROCK_MODEL_ID: !Ref BedrockModelId
       Policies:
-        - DynamoDBCrudPolicy:
-            TableName: !Ref ReviewDedupeTable
         - Statement:
             - Effect: Allow
               Action: bedrock:InvokeModel

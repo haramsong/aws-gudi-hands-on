@@ -1,6 +1,6 @@
 # 🤖 GitHub PR AI Review Bot
 
-PR이 올라오거나 새 커밋이 push되면, Amazon Bedrock(Claude)이 자동으로 코드 리뷰를 달아주는 서버리스 봇입니다.
+PR이 올라오거나 PR 코멘트에 `/review`를 입력하면, Amazon Bedrock(Nova Pro)이 자동으로 코드 리뷰를 달아주는 서버리스 봇입니다.
 
 ## 아키텍처
 
@@ -18,21 +18,19 @@ Dispatcher Lambda ──── 서명 검증 + 이벤트 필터링
 Worker Lambda
     ├── GitHub Check 생성 (in_progress)
     ├── PR diff 조회 (octokit)
-    ├── Bedrock Claude 코드 리뷰
+    ├── Bedrock Nova Pro 코드 리뷰
     ├── PR에 리뷰 코멘트 게시
-    ├── GitHub Check 완료 (success / failure)
-    └── DynamoDB 중복 방지
+    └── GitHub Check 완료 (success / failure)
 ```
 
 ## 사용 기술
 
-| 서비스 | 용도 |
-|--------|------|
-| AWS Lambda (Node.js 22, arm64) | Dispatcher / Worker 함수 |
-| Amazon API Gateway (HTTP API) | GitHub Webhook 수신 |
-| Amazon Bedrock (Claude Haiku 4.5) | AI 코드 리뷰 생성 |
-| Amazon DynamoDB | 동일 커밋 중복 리뷰 방지 (TTL 24h) |
-| GitHub Checks API | PR에 리뷰 상태 표시 |
+| 서비스                            | 용도                               |
+| --------------------------------- | ---------------------------------- |
+| AWS Lambda (Node.js 22, arm64)    | Dispatcher / Worker 함수           |
+| Amazon API Gateway (HTTP API)     | GitHub Webhook 수신                |
+| Amazon Bedrock (Nova Pro)         | AI 코드 리뷰 생성                  |
+| GitHub Checks API                 | PR에 리뷰 상태 표시                |
 
 ## 사전 준비
 
@@ -42,22 +40,23 @@ Worker Lambda
 2. 왼쪽 하단 **Developer settings** → **GitHub Apps** → **New GitHub App**
 3. 아래 항목을 입력합니다:
 
-| 항목 | 값 |
-|------|-----|
-| App name | `pr-review-bot` (원하는 이름) |
-| Homepage URL | `https://github.com` (아무 URL) |
-| Webhook URL | `https://example.com` (배포 후 수정) |
-| Webhook secret | 임의의 문자열 입력 (메모해두세요) |
+| 항목           | 값                                   |
+| -------------- | ------------------------------------ |
+| App name       | `pr-review-bot` (원하는 이름)        |
+| Homepage URL   | `https://github.com` (아무 URL)      |
+| Webhook URL    | `https://example.com` (배포 후 수정) |
+| Webhook secret | 임의의 문자열 입력 (메모해두세요)    |
 
 4. **Permissions** 섹션에서 아래 권한을 설정합니다:
 
-| 권한 | 레벨 |
-|------|------|
+| 권한          | 레벨           |
+| ------------- | -------------- |
 | Pull requests | `Read & Write` |
-| Checks | `Read & Write` |
-| Contents | `Read-only` |
+| Checks        | `Read & Write` |
+| Issues        | `Read-only`    |
+| Contents      | `Read-only`    |
 
-5. **Subscribe to events** 섹션에서 **Pull request** 체크
+5. **Subscribe to events** 섹션에서 **Pull request**, **Issue comment** 체크
 6. **Where can this GitHub App be installed?** → `Only on this account` 선택
 7. **Create GitHub App** 클릭
 
@@ -97,11 +96,11 @@ aws ssm put-parameter \
 최신 Bedrock 정책에서는 모델을 처음 호출할 때 자동으로 활성화됩니다. 배포 전에 한 번 호출해서 활성화해주세요.
 
 1. AWS 콘솔 → **Amazon Bedrock** → 왼쪽 메뉴 **Model catalog**
-2. **Claude Haiku 4.5** 검색 → 선택
+2. **Nova Pro** 검색 → 선택
 3. **Open in playground** 클릭 → 아무 메시지 입력 → **Run** 클릭
 4. 응답이 정상적으로 오면 활성화 완료
 
-> ⚠️ 처음 사용 시 Anthropic 이용 약관 동의(use case details 제출)가 필요할 수 있습니다. 화면 안내에 따라 진행하세요.
+> ⚠️ 처음 사용 시 이용 약관 동의(use case details 제출)가 필요할 수 있습니다. 화면 안내에 따라 진행하세요.
 
 ### 4. AWS CloudShell 접속
 
@@ -124,12 +123,13 @@ sam deploy --guided
 
 `--guided` 실행 시 아래 파라미터를 입력합니다:
 
-| 파라미터 | 설명 |
-|----------|------|
-| `GitHubWebhookSecret` | GitHub App에서 설정한 Webhook secret |
-| `GitHubAppId` | GitHub App 설정 페이지 상단 About의 App ID |
+| 파라미터                | 설명                                                          |
+| ----------------------- | ------------------------------------------------------------- |
+| `GitHubWebhookSecret`   | GitHub App에서 설정한 Webhook secret                          |
+| `GitHubAppId`           | GitHub App 설정 페이지 상단 About의 App ID                    |
 | `GitHubPrivateKeyParam` | SSM 파라미터 이름 (기본: `/pr-review-bot/github-private-key`) |
-| `GitHubInstallationId` | App 설치 후 URL의 Installation ID |
+| `GitHubInstallationId`  | App 설치 후 URL의 Installation ID                             |
+| `BedrockModelId`        | Bedrock 모델 ID (기본: `apac.amazon.nova-pro-v1:0`)           |
 
 배포 완료 후 출력되는 `WebhookUrl`을 GitHub App의 Webhook URL에 입력합니다.
 
@@ -147,13 +147,12 @@ sam deploy --guided
 
 ## 동작 흐름
 
-1. PR 생성(`opened`) 또는 새 커밋 push(`synchronize`) 시 GitHub이 Webhook 전송
+1. PR 생성(`opened`) 또는 PR 코멘트에 `/review` 입력 시 GitHub이 Webhook 전송
 2. **Dispatcher**: HMAC-SHA256 서명 검증 → 대상 이벤트만 필터링 → Worker를 비동기 호출
 3. **Worker**:
-   - DynamoDB로 동일 SHA 중복 체크
    - GitHub Check를 `in_progress`로 생성
    - octokit으로 PR diff 조회
-   - Bedrock Claude에 diff를 보내 코드 리뷰 생성
+   - Bedrock Nova Pro에 diff를 보내 코드 리뷰 생성
    - PR에 리뷰 코멘트 게시
    - GitHub Check를 `success` 또는 `failure`로 완료
 
@@ -167,19 +166,18 @@ sam delete
 
 > 월 100건의 PR 리뷰 기준으로 산출했습니다. (PR당 평균 diff 약 5,000자 가정)
 
-| 서비스 | 프리 티어 | 예상 사용량 | 예상 비용 |
-|--------|-----------|-------------|-----------|
-| **Lambda** | 월 100만 건 요청 + 400,000 GB-초 (상시 무료) | Dispatcher 100건 + Worker 100건 = 200건 | **$0** (프리 티어 내) |
-| **API Gateway (HTTP API)** | 월 100만 건 (12개월 무료) | 100건 | **$0** (프리 티어 내) |
-| **DynamoDB** | 25GB 스토리지 + 25 WCU/RCU (상시 무료) | 100건 읽기/쓰기 | **$0** (프리 티어 내) |
-| **Bedrock (Claude Haiku 4.5)** | 프리 티어 없음 | Input: ~50만 토큰, Output: ~10만 토큰 | **~$1.00** |
+| 서비스                         | 프리 티어                                    | 예상 사용량                             | 예상 비용             |
+| ------------------------------ | -------------------------------------------- | --------------------------------------- | --------------------- |
+| **Lambda**                     | 월 100만 건 요청 + 400,000 GB-초 (상시 무료) | Dispatcher 100건 + Worker 100건 = 200건 | **$0** (프리 티어 내) |
+| **API Gateway (HTTP API)**     | 월 100만 건 (12개월 무료)                    | 100건                                   | **$0** (프리 티어 내) |
+| **Bedrock (Nova Pro)**             | 프리 티어 없음                               | Input: ~50만 토큰, Output: ~10만 토큰   | **~$0.11**            |
 
 ### Bedrock 비용 상세
 
-- Claude Haiku 4.5 기준: Input $1.00 / 1M 토큰, Output $5.00 / 1M 토큰
-- PR 1건당: Input ~5,000 토큰 (diff + 프롬프트) × $0.000001 = $0.005
-- PR 1건당: Output ~1,000 토큰 (리뷰 결과) × $0.000005 = $0.005
-- **PR 1건당 약 $0.01, 월 100건 기준 약 $1.00**
+- Nova Pro 기준: Input $0.80 / 1M 토큰, Output $3.20 / 1M 토큰
+- PR 1건당: Input ~5,000 토큰 × $0.0000008 = $0.004
+- PR 1건당: Output ~1,000 토큰 × $0.0000032 = $0.0032
+- **PR 1건당 약 $0.007, 월 100건 기준 약 $0.70**
 
 ### 요약
 

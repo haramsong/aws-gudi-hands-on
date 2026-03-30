@@ -26,18 +26,25 @@ export const handler = async (event) => {
   const payload = JSON.parse(body);
   console.log("Action:", payload.action);
 
-  // PR 열림/동기화(새 커밋 push) 이벤트만 처리
-  if (ghEvent !== "pull_request" || !["opened", "synchronize"].includes(payload.action)) {
+  let pr;
+
+  if (ghEvent === "pull_request" && payload.action === "opened") {
+    // PR 열림 이벤트
+    pr = payload.pull_request;
+  } else if (ghEvent === "issue_comment" && payload.action === "created"
+    && payload.issue?.pull_request && payload.comment?.body?.trim() === "/review") {
+    // PR 코멘트에 /review 커맨드
+    pr = payload.issue.pull_request;
+  } else {
     console.log("Ignored:", ghEvent, payload.action);
     return { statusCode: 200, body: "ignored" };
   }
 
-  const pr = payload.pull_request;
   const workerPayload = {
     owner: payload.repository.owner.login,
     repo: payload.repository.name,
-    prNumber: pr.number,
-    headSha: pr.head.sha,
+    prNumber: payload.issue?.number || payload.pull_request.number,
+    headSha: pr.head?.sha || null,
   };
   console.log("Dispatching to worker:", JSON.stringify(workerPayload));
 
