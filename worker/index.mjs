@@ -84,6 +84,21 @@ function buildSummary(comments) {
   return body;
 }
 
+// 두 줄이 같은 코드의 원본/수정 관계인지 판별 (공백 제거 후 공통 토큰 비율)
+function linesRelated(original, suggestion) {
+  const a = original.replace(/\s+/g, "");
+  const b = suggestion.replace(/\s+/g, "");
+  if (!a || !b) return false;
+  const shorter = a.length < b.length ? a : b;
+  const longer = a.length < b.length ? b : a;
+  // 짧은 쪽 문자의 절반 이상이 긴 쪽에 포함되면 관련 있다고 판단
+  let match = 0;
+  for (const ch of shorter) {
+    if (longer.includes(ch)) match++;
+  }
+  return match / shorter.length > 0.5;
+}
+
 // diff를 파일별로 파싱 → [{ path, chunks: [{ startLine, lines }] }]
 function parseDiff(diff) {
   const files = [];
@@ -224,12 +239,13 @@ export const handler = async (event) => {
         .find((s) => s.includes(`+++ b/${file.path}`));
       if (!fileDiff) continue;
 
-      // diff에 존재하는 유효 라인 번호 집합
-      const validLines = new Set();
+      // diff 라인번호 → 내용 맵
+      const lineMap = new Map();
       for (const chunk of file.chunks) {
         let lineNum = chunk.startLine;
         for (const l of chunk.lines) {
-          validLines.add(lineNum);
+          const content = l.startsWith("+") ? l.slice(1) : l.startsWith(" ") ? l.slice(1) : l;
+          lineMap.set(lineNum, content);
           lineNum++;
         }
       }
@@ -237,12 +253,34 @@ export const handler = async (event) => {
       const reviews = await reviewFile(file.path, fileDiff.slice(0, 10000));
 
       for (const r of reviews) {
-        if (r.line && r.body) {
-          if (validLines.has(r.line)) {
-            comments.push({ path: file.path, line: r.line, body: r.body });
-          } else {
-            console.warn(`[WARN] ${file.path}:${r.line} — diff 범위 밖이라 코멘트 제외`);
+        if (!r.line || !r.body) continue;
+
+        let targetLine = r.line;
+
+        // suggestion에서 수정 후 코드 추출 → 원본 줄과 비교하여 라인 보정
+        const sugMatch = r.body.match(/```suggestion\n([\s\S]*?)\n```/);
+        if (sugMatch) {
+          const sugCode = sugMatch[1].trimEnd();
+          const currentContent = (lineMap.get(targetLine) ?? "").trimEnd();
+
+          // suggestion(수정 후)과 현재 줄이 동일하면 → 이미 맞는 줄을 가리키고 있으므로 보정 필요
+          // 또는 현재 줄과 suggestion이 전혀 관련 없으면 보정 필요
+          if (currentContent === sugCode || !linesRelated(currentContent, sugCode)) {
+            for (const offset of [1, -1, 2, -2]) {
+              const nearby = (lineMap.get(targetLine + offset) ?? "").trimEnd();
+              if (nearby !== sugCode && linesRelated(nearby, sugCode)) {
+                console.log(`[FIX] ${file.path}:${targetLine} → ${targetLine + offset} (라인 보정)`);
+                targetLine += offset;
+                break;
+              }
+            }
           }
+        }
+
+        if (lineMap.has(targetLine)) {
+          comments.push({ path: file.path, line: targetLine, body: r.body });
+        } else {
+          console.warn(`[WARN] ${file.path}:${r.line} — diff 범위 밖이라 코멘트 제외`);
         }
       }
     }
