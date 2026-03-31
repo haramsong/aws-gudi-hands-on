@@ -143,7 +143,8 @@ function getLineNumber(chunk, indexInChunk) {
 async function reviewFile(filePath, diff) {
   const res = await bedrock.send(new ConverseCommand({
     modelId: process.env.BEDROCK_MODEL_ID,
-    system: [{ text: `당신은 시니어 코드 리뷰어입니다. 반드시 한국어로 답변하세요.
+    system: [{
+      text: `당신은 시니어 코드 리뷰어입니다. 반드시 한국어로 답변하세요.
 
 ## 리뷰 규칙
 - 버그, 보안 취약점, 성능 문제, 가독성 개선점을 찾아주세요.
@@ -166,7 +167,7 @@ async function reviewFile(filePath, diff) {
 카테고리 이모지:
   🐛 버그/오류  🔒 보안 이슈  ⚡ 성능 개선  🧹 코드 스타일  💡 제안  ✅ 좋은 코드
 
-## 예시
+### 예시
 { "line": 10, "body": "🔒 사용자 입력을 검증 없이 쿼리에 직접 사용하고 있어 SQL Injection 위험이 있습니다.\\n\\n\`\`\`suggestion\\nconst result = await db.query('SELECT * FROM users WHERE id = ?', [userId]);\\n\`\`\`" }
 { "line": 25, "body": "🧹 변수명이 모호합니다. 역할을 명확히 드러내는 이름이 좋습니다.\\n\\n\`\`\`suggestion\\nconst maxRetryCount = 3;\\n\`\`\`" }
 { "line": 42, "body": "✅ 에러 핸들링이 잘 되어 있습니다." }
@@ -175,10 +176,24 @@ async function reviewFile(filePath, diff) {
 - diff의 @@ -a,b +c,d @@ 헤더에서 +c가 해당 hunk의 시작 라인 번호입니다.
 - 헤더 다음 줄부터 카운트하되, -로 시작하는 줄(삭제)은 건너뜁니다.
 - 공백으로 시작하는 줄(컨텍스트)과 +로 시작하는 줄(추가)만 라인 번호가 증가합니다.
+- diff를 비교할 때 -로 시작하는 줄 앞으로 두 라인, +로 끝나는 줄 뒤로 두 라인을 같이 첨부해주세요.
 - "line" 값은 반드시 이 계산으로 나온 번호만 사용하세요.
 
 ## 주의사항
-- suggestion 블록 안에는 해당 줄을 대체할 코드만 넣으세요.` }],
+- suggestion 블록 안에는 해당 줄을 대체할 코드만 넣으세요.
+
+## 라인 번호 계산 예시
+아래 diff에서 각 줄의 라인 번호를 계산하면:
+\`\`\`diff
+@@ -51,7 +51,7 @@ export async function generateMetadata({
+   return getMetadata({                               ← 라인 51 (공백 시작, 컨텍스트)
+     title: \\\`[\${removeKebab(category)}] \${post.title}\\\`,  ← 라인 52
+     asPath: \\\`/posts/\${section}/\${category}/\${slug}\\\`,   ← 라인 53
+-    description: post.summary,                       ← 삭제 줄, 건너뜀 (라인 번호 증가 안 함)
++    description: post.sumary,                        ← 라인 54 (추가 줄)
+     ogImage: post.thumbnail,                         ← 라인 55
+\`\`\`
+→ \`post.sumary\` 오타는 "line": 54 입니다. 53도 55도 아닙니다.` }],
     messages: [{
       role: "user",
       content: [{ text: `파일: ${filePath}\n\n\`\`\`diff\n${diff}\n\`\`\`` }],
