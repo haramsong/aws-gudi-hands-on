@@ -156,8 +156,13 @@ async function reviewFile(filePath, diff) {
 { "line": 25, "body": "🧹 변수명이 모호합니다. 역할을 명확히 드러내는 이름이 좋습니다.\\n\\n\`\`\`suggestion\\nconst maxRetryCount = 3;\\n\`\`\`" }
 { "line": 42, "body": "✅ 에러 핸들링이 잘 되어 있습니다." }
 
+## 라인 번호 계산 규칙
+- diff의 @@ -a,b +c,d @@ 헤더에서 +c가 해당 hunk의 시작 라인 번호입니다.
+- 헤더 다음 줄부터 카운트하되, -로 시작하는 줄(삭제)은 건너뜁니다.
+- 공백으로 시작하는 줄(컨텍스트)과 +로 시작하는 줄(추가)만 라인 번호가 증가합니다.
+- "line" 값은 반드시 이 계산으로 나온 번호만 사용하세요.
+
 ## 주의사항
-- "line"은 diff에서 +로 시작하는 변경된 줄의 번호입니다.
 - suggestion 블록 안에는 해당 줄을 대체할 코드만 넣으세요.` }],
     messages: [{
       role: "user",
@@ -219,11 +224,25 @@ export const handler = async (event) => {
         .find((s) => s.includes(`+++ b/${file.path}`));
       if (!fileDiff) continue;
 
+      // diff에 존재하는 유효 라인 번호 집합
+      const validLines = new Set();
+      for (const chunk of file.chunks) {
+        let lineNum = chunk.startLine;
+        for (const l of chunk.lines) {
+          validLines.add(lineNum);
+          lineNum++;
+        }
+      }
+
       const reviews = await reviewFile(file.path, fileDiff.slice(0, 10000));
 
       for (const r of reviews) {
         if (r.line && r.body) {
-          comments.push({ path: file.path, line: r.line, body: r.body });
+          if (validLines.has(r.line)) {
+            comments.push({ path: file.path, line: r.line, body: r.body });
+          } else {
+            console.warn(`[WARN] ${file.path}:${r.line} — diff 범위 밖이라 코멘트 제외`);
+          }
         }
       }
     }

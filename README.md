@@ -25,12 +25,12 @@ Worker Lambda
 
 ## 사용 기술
 
-| 서비스                            | 용도                               |
-| --------------------------------- | ---------------------------------- |
-| AWS Lambda (Node.js 22, arm64)    | Dispatcher / Worker 함수           |
-| Amazon API Gateway (HTTP API)     | GitHub Webhook 수신                |
-| Amazon Bedrock (Nova Pro)         | AI 코드 리뷰 생성                  |
-| GitHub Checks API                 | PR에 리뷰 상태 표시                |
+| 서비스                         | 용도                     |
+| ------------------------------ | ------------------------ |
+| AWS Lambda (Node.js 22, arm64) | Dispatcher / Worker 함수 |
+| Amazon API Gateway (HTTP API)  | GitHub Webhook 수신      |
+| Amazon Bedrock (Nova Pro)      | AI 코드 리뷰 생성        |
+| GitHub Checks API              | PR에 리뷰 상태 표시      |
 
 ## 사전 준비
 
@@ -123,7 +123,7 @@ aws ssm put-parameter \
 
 ```bash
 # 1. 레포 클론
-git clone <repo-url>
+git clone https://github.com/haramsong/aws-gudi-hands-on.git
 cd aws-gudi-hands-on
 
 # 2. 빌드
@@ -146,17 +146,17 @@ sam deploy --guided
 
 ### 모델별 Max Output Tokens 참고
 
-| 모델 | Model ID | Max Output Tokens | 비고 |
-| --- | --- | --- | --- |
-| Nova Micro | `apac.amazon.nova-micro-v1:0` | 5,000 | 텍스트 전용, 가장 빠름 |
-| Nova Lite | `apac.amazon.nova-lite-v1:0` | 5,000 | 멀티모달, 저비용 |
-| **Nova Pro** | `apac.amazon.nova-pro-v1:0` | **5,000** | **기본값** |
-| Claude 3.5 Sonnet v2 | `apac.anthropic.claude-3-5-sonnet-20241022-v2:0` | 8,192 | 안정적, 검증된 모델 |
-| Claude 3.7 Sonnet | `apac.anthropic.claude-3-7-sonnet-20250219-v1:0` | 8,192 | extended thinking 지원 |
-| Claude Sonnet 4 | `apac.anthropic.claude-sonnet-4-20250514-v1:0` | 16,384 | 코딩 우수 |
-| Claude Haiku 4.5 | `global.anthropic.claude-haiku-4-5-20251001-v1:0` | 8,192 | 빠른 응답, 저비용 |
-| Claude Sonnet 4.5 | `global.anthropic.claude-sonnet-4-5-20250929-v1:0` | 16,384 | 최신, 고품질 리뷰 |
-| Claude Opus 4.5 | `global.anthropic.claude-opus-4-5-20251101-v1:0` | 32,000 | 최고 성능, 고비용 |
+| 모델                 | Model ID                                           | Max Output Tokens | 비고                   |
+| -------------------- | -------------------------------------------------- | ----------------- | ---------------------- |
+| Nova Micro           | `apac.amazon.nova-micro-v1:0`                      | 5,000             | 텍스트 전용, 가장 빠름 |
+| Nova Lite            | `apac.amazon.nova-lite-v1:0`                       | 5,000             | 멀티모달, 저비용       |
+| **Nova Pro**         | `apac.amazon.nova-pro-v1:0`                        | **5,000**         | **기본값**             |
+| Claude 3.5 Sonnet v2 | `apac.anthropic.claude-3-5-sonnet-20241022-v2:0`   | 8,192             | 안정적, 검증된 모델    |
+| Claude 3.7 Sonnet    | `apac.anthropic.claude-3-7-sonnet-20250219-v1:0`   | 8,192             | extended thinking 지원 |
+| Claude Sonnet 4      | `apac.anthropic.claude-sonnet-4-20250514-v1:0`     | 16,384            | 코딩 우수              |
+| Claude Haiku 4.5     | `global.anthropic.claude-haiku-4-5-20251001-v1:0`  | 8,192             | 빠른 응답, 저비용      |
+| Claude Sonnet 4.5    | `global.anthropic.claude-sonnet-4-5-20250929-v1:0` | 16,384            | 최신, 고품질 리뷰      |
+| Claude Opus 4.5      | `global.anthropic.claude-opus-4-5-20251101-v1:0`   | 32,000            | 최고 성능, 고비용      |
 
 > `apac.` 접두사는 APAC 리전 내에서만 라우팅됩니다. `global.` 접두사는 전 세계 리전으로 라우팅되어 처리량이 높지만, 데이터가 다른 대륙으로 전송될 수 있습니다.
 >
@@ -228,11 +228,11 @@ sam delete
 
 > 월 100건의 PR 리뷰 기준으로 산출했습니다. (PR당 평균 diff 약 5,000자 가정)
 
-| 서비스                         | 프리 티어                                    | 예상 사용량                             | 예상 비용             |
-| ------------------------------ | -------------------------------------------- | --------------------------------------- | --------------------- |
-| **Lambda**                     | 월 100만 건 요청 + 400,000 GB-초 (상시 무료) | Dispatcher 100건 + Worker 100건 = 200건 | **$0** (프리 티어 내) |
-| **API Gateway (HTTP API)**     | 월 100만 건 (12개월 무료)                    | 100건                                   | **$0** (프리 티어 내) |
-| **Bedrock (Nova Pro)**             | 프리 티어 없음                               | Input: ~50만 토큰, Output: ~10만 토큰   | **~$0.11**            |
+| 서비스                     | 프리 티어                                    | 예상 사용량                             | 예상 비용             |
+| -------------------------- | -------------------------------------------- | --------------------------------------- | --------------------- |
+| **Lambda**                 | 월 100만 건 요청 + 400,000 GB-초 (상시 무료) | Dispatcher 100건 + Worker 100건 = 200건 | **$0** (프리 티어 내) |
+| **API Gateway (HTTP API)** | 월 100만 건 (12개월 무료)                    | 100건                                   | **$0** (프리 티어 내) |
+| **Bedrock (Nova Pro)**     | 프리 티어 없음                               | Input: ~50만 토큰, Output: ~10만 토큰   | **~$0.11**            |
 
 ### Bedrock 비용 상세
 
