@@ -276,7 +276,7 @@ export const handler = async (event) => {
           body = body.replace(/\n?\n?```suggestion\n[\s\S]*?\n```/, "");
         }
 
-        const comment = { path: file.path, line: r.line, side, body, subject_type: "file" };
+        const comment = { path: file.path, line: r.line, side, body };
 
         // 멀티라인 지원
         if (r.start_line && r.start_line < r.line) {
