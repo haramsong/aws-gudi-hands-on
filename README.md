@@ -143,6 +143,7 @@ sam deploy --guided
 | `GitHubInstallationId`  | App 설치 후 URL의 Installation ID                             |
 | `BedrockModelId`        | Bedrock 모델 ID (기본: `apac.amazon.nova-pro-v1:0`)           |
 | `BedrockMaxTokens`      | Bedrock 최대 출력 토큰 수 (기본: `4096`)                      |
+| `SlackWebhookUrl`       | Slack Incoming Webhook URL (선택, 비워두면 알림 없음)         |
 
 ### 모델별 Max Output Tokens 참고
 
