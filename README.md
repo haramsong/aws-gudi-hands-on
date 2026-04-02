@@ -127,9 +127,10 @@ cd aws-gudi-hands-on
 `deploy.sh`는 아래 순서로 동작합니다:
 
 1. 프로젝트 루트의 `.pem` 파일을 자동으로 찾아 base64 인코딩
-2. 필수 파라미터를 대화형으로 입력받음 (재배포 시 이전 값을 기본값으로 표시)
-3. `sam build` → `sam deploy` 실행 (첫 배포 시 `--guided`로 스택 설정)
-4. SSM Parameter Store에 Private Key를 자동 저장 (`sam delete` 시 같이 삭제)
+2. 필수 파라미터를 대화형으로 입력받음 (재배포 시 `samconfig.toml`의 이전 값을 기본값으로 표시)
+3. `sam build` → `sam deploy` 실행
+4. 첫 배포 시 스택 이름과 리전도 입력받고, 배포 완료 후 `samconfig.toml`을 자동 생성
+5. SSM Parameter Store에 Private Key를 자동 저장 (`sam delete` 시 같이 삭제)
 
 대화형으로 입력하는 파라미터:
 
