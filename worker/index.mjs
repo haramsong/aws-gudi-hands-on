@@ -291,10 +291,12 @@ export const handler = async (event) => {
     }
 
     const summaryBody = buildSummary(comments);
+    const hasCritical = comments.some((c) => c.body.includes("🐛") || c.body.includes("🔒"));
+    const reviewEvent = hasCritical ? "REQUEST_CHANGES" : comments.length > 0 ? "COMMENT" : "APPROVE";
     await octokit.rest.pulls.createReview({
       owner, repo, pull_number: prNumber,
       commit_id: headSha,
-      event: comments.length > 0 ? "COMMENT" : "APPROVE",
+      event: reviewEvent,
       body: summaryBody,
       comments,
     });
