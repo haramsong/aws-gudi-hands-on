@@ -16,7 +16,8 @@ echo ""
 get_prev() {
   local key=$1
   if [ -f samconfig.toml ]; then
-    grep -o "${key}=[^ \"]*" samconfig.toml | head -1 | cut -d= -f2-
+    # 형식: Key=\"Value\"
+    sed -n 's/.*'"${key}"'=\\"\([^"]*\)\\.*/\1/p' samconfig.toml | head -1
   fi
 }
 
