@@ -183,9 +183,24 @@ sam deploy --guided
 3. **Worker**:
    - GitHub Check를 `in_progress`로 생성
    - octokit으로 PR diff 조회
-   - Bedrock Nova Pro에 diff를 보내 코드 리뷰 생성
-   - PR에 리뷰 코멘트 게시
+   - diff를 파싱하여 각 줄에 라인 번호 접두사를 붙인 annotated diff 생성
+   - Bedrock에 annotated diff를 보내 코드 리뷰 생성 (오타 검출 최우선)
+   - 리뷰 결과에 따라 PR 상태 결정:
+     - 🐛 버그 또는 🔒 보안 이슈 → `Request Changes`
+     - 그 외 코멘트만 → `Comment`
+     - 이슈 없음 → `Approve`
    - GitHub Check를 `success` 또는 `failure`로 완료
+
+### 리뷰 카테고리
+
+| 이모지 | 카테고리 | 설명 |
+| ------ | -------- | ---- |
+| 🐛 | 버그 | 오타, 런타임 에러, 컴파일 에러, 잘못된 값 |
+| 🔒 | 보안 | 보안 취약점 |
+| ⚡ | 성능 | 성능 개선 |
+| 🧹 | 코드 스타일 | 포맷팅, 네이밍 컨벤션, 가독성 |
+| 💡 | 제안 | 개선 제안 |
+| ✅ | 좋은 코드 | 잘 작성된 코드 |
 
 ## 대용량 PR 리뷰 시 주의사항
 
