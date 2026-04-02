@@ -30,6 +30,11 @@ Parameters:
     Default: 4096
     Description: Bedrock max output tokens
 
+  SlackWebhookUrl:
+    Type: String
+    Default: ""
+    Description: Slack Incoming Webhook URL (optional)
+
 Globals:
   Function:
     Runtime: nodejs22.x
@@ -79,6 +84,7 @@ Resources:
           GITHUB_INSTALLATION_ID: !Ref GitHubInstallationId
           BEDROCK_MODEL_ID: !Ref BedrockModelId
           BEDROCK_MAX_TOKENS: !Ref BedrockMaxTokens
+          SLACK_WEBHOOK_URL: !Ref SlackWebhookUrl
       Policies:
         - Statement:
             - Effect: Allow

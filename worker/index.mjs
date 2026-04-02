@@ -7,6 +7,21 @@ const bedrock = new BedrockRuntimeClient();
 const ssm = new SSMClient();
 const CHECK_NAME = "AI Code Review";
 
+// Slack 알림 전송 (SLACK_WEBHOOK_URL 미설정 시 무시)
+async function notifySlack(text) {
+  const url = process.env.SLACK_WEBHOOK_URL;
+  if (!url) return;
+  try {
+    await fetch(url, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ text }),
+    });
+  } catch (err) {
+    console.warn(`[SLACK] 알림 전송 실패: ${err.message}`);
+  }
+}
+
 // SSM에서 Private Key를 가져와 캐싱
 let cachedPrivateKey;
 async function getPrivateKey() {
@@ -231,6 +246,8 @@ export const handler = async (event) => {
   }
 
   const checkRunId = await createCheck(octokit, owner, repo, headSha);
+  const prUrl = `https://github.com/${owner}/${repo}/pull/${prNumber}`;
+  await notifySlack(`🔍 *리뷰 시작* — <${prUrl}|${owner}/${repo}#${prNumber}>`);
 
   try {
     const diffRes = await octokit.rest.pulls.get({
@@ -303,9 +320,11 @@ export const handler = async (event) => {
     });
 
     await completeCheck(octokit, owner, repo, checkRunId, "success", `리뷰 완료: ${comments.length}건의 피드백`);
+    await notifySlack(`✅ *리뷰 완료* — <${prUrl}|${owner}/${repo}#${prNumber}> | ${comments.length}건 피드백 | ${reviewEvent}`);
     return { status: "reviewed", comments: comments.length };
   } catch (err) {
     await completeCheck(octokit, owner, repo, checkRunId, "failure", `리뷰 중 오류 발생: ${err.message}`);
+    await notifySlack(`❌ *리뷰 실패* — <${prUrl}|${owner}/${repo}#${prNumber}> | ${err.message}`);
     throw err;
   }
 };
