@@ -53,7 +53,7 @@ async function completeCheck(octokit, owner, repo, checkRunId, conclusion, summa
 function buildSummary(comments) {
   if (comments.length === 0) return "🤖 **AI Code Review** — ✅ 코드가 깔끔합니다!";
 
-  const categories = { "🐛": "버그", "🔒": "보안", "⚡": "성능", "🧹": "클린코드", "💡": "제안" };
+  const categories = { "🐛": "버그", "🔒": "보안", "⚡": "성능", "🧹": "코드 스타일", "💡": "제안" };
   const counts = {};
   const critical = []; // 🐛, 🔒만 치명적 이슈로 표시
 
