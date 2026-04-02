@@ -72,19 +72,11 @@ App 생성 후 아래 3가지 값을 확인합니다. 배포 시 파라미터로
 #### Private Key (.pem)
 
 1. App 설정 페이지 → **Generate a private key** 클릭 → `.pem` 파일 다운로드
-2. AWS SSM Parameter Store에 저장합니다:
+2. 다운로드한 `.pem` 파일을 프로젝트 루트에 복사합니다 (배포 스크립트가 자동으로 읽습니다)
 
-```bash
-# CloudShell에서 실행 (.pem 파일을 업로드한 후)
-aws ssm put-parameter \
-  --name "/pr-review-bot/github-private-key" \
-  --type String \
-  --value "$(cat your-app.pem)"
-```
-
-> 💡 CloudShell에 파일 업로드: 상단 메뉴 **Actions** → **Upload file** → `.pem` 파일 선택
+> 💡 CloudShell 사용 시: 상단 메뉴 **Actions** → **Upload file** → `.pem` 파일 선택 후 프로젝트 루트로 이동
 >
-> ⚠️ 프로덕션 환경에서는 `--type SecureString`을 사용하세요. SecureString은 KMS로 암호화되어 더 안전하지만, KMS 호출 비용이 발생합니다.
+> ⚠️ `.pem` 파일은 `.gitignore`에 포함되어 있어 Git에 커밋되지 않습니다.
 
 #### Installation ID
 
@@ -126,24 +118,34 @@ aws ssm put-parameter \
 git clone https://github.com/haramsong/aws-gudi-hands-on.git
 cd aws-gudi-hands-on
 
-# 2. 빌드
-sam build
+# 2. .pem 파일을 프로젝트 루트에 복사
 
-# 3. 배포 (첫 배포 시)
-sam deploy --guided
+# 3. 배포 스크립트 실행
+./deploy.sh
 ```
 
-`--guided` 실행 시 아래 파라미터를 입력합니다:
+`deploy.sh`는 아래 순서로 동작합니다:
 
-| 파라미터                | 설명                                                          |
-| ----------------------- | ------------------------------------------------------------- |
-| `GitHubWebhookSecret`   | GitHub App에서 설정한 Webhook secret                          |
-| `GitHubAppId`           | GitHub App 설정 페이지 상단 About의 App ID                    |
-| `GitHubPrivateKeyParam` | SSM 파라미터 이름 (기본: `/pr-review-bot/github-private-key`) |
-| `GitHubInstallationId`  | App 설치 후 URL의 Installation ID                             |
-| `BedrockModelId`        | Bedrock 모델 ID (기본: `apac.amazon.nova-pro-v1:0`)           |
-| `BedrockMaxTokens`      | Bedrock 최대 출력 토큰 수 (기본: `4096`)                      |
-| `SlackWebhookUrl`       | Slack Incoming Webhook URL (선택, 비워두면 알림 없음)         |
+1. 프로젝트 루트의 `.pem` 파일을 자동으로 찾아 base64 인코딩
+2. 필수 파라미터를 대화형으로 입력받음 (재배포 시 이전 값을 기본값으로 표시)
+3. `sam build` → `sam deploy` 실행 (첫 배포 시 `--guided`로 스택 설정)
+4. SSM Parameter Store에 Private Key를 자동 저장 (`sam delete` 시 같이 삭제)
+
+대화형으로 입력하는 파라미터:
+
+| 파라미터                | 설명                                                  |
+| ----------------------- | ----------------------------------------------------- |
+| `GitHubWebhookSecret`   | GitHub App에서 설정한 Webhook secret                  |
+| `GitHubAppId`           | GitHub App 설정 페이지 상단 About의 App ID            |
+| `GitHubInstallationId`  | App 설치 후 URL의 Installation ID                     |
+| `SlackWebhookUrl`       | Slack Incoming Webhook URL (선택, 비워두면 알림 없음) |
+
+아래 파라미터는 기본값이 있어 별도 입력 없이 배포됩니다:
+
+| 파라미터            | 기본값                        | 설명                        |
+| ------------------- | ----------------------------- | --------------------------- |
+| `BedrockModelId`    | `apac.amazon.nova-pro-v1:0`   | Bedrock 모델 ID             |
+| `BedrockMaxTokens`  | `4096`                        | Bedrock 최대 출력 토큰 수   |
 
 ### 모델별 Max Output Tokens 참고
 
@@ -169,6 +171,7 @@ sam deploy --guided
 
 ```
 ├── template.yaml          # SAM 템플릿
+├── deploy.sh              # 배포 스크립트 (대화형 파라미터 입력)
 ├── dispatcher/
 │   ├── package.json
 │   └── index.mjs          # Webhook 수신 → 서명 검증 → Worker 호출
@@ -239,6 +242,8 @@ for (const hunk of hunks) {
 ```bash
 sam delete
 ```
+
+> SSM Parameter Store의 Private Key도 SAM 스택에 포함되어 있어 함께 삭제됩니다.
 
 ## 예상 비용
 
