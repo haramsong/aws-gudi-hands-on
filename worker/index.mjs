@@ -22,7 +22,7 @@ async function notifySlack(text) {
   }
 }
 
-// SSM에서 Private Key를 가져와 캐싱
+// SSM에서 Private Key를 가져와 캐싱 (base64 디코딩)
 let cachedPrivateKey;
 async function getPrivateKey() {
   if (!cachedPrivateKey) {
@@ -30,7 +30,7 @@ async function getPrivateKey() {
       Name: process.env.GITHUB_PRIVATE_KEY_PARAM,
       WithDecryption: true,
     }));
-    cachedPrivateKey = res.Parameter.Value;
+    cachedPrivateKey = Buffer.from(res.Parameter.Value, "base64").toString("utf-8");
   }
   return cachedPrivateKey;
 }

@@ -23,24 +23,19 @@ read -p "Slack Webhook URL (없으면 Enter): " SLACK_URL
 echo ""
 echo "🚀 빌드 및 배포 시작..."
 
+# .pem 내용을 base64 인코딩 (줄바꿈 제거)
+PRIVATE_KEY_B64=$(base64 < "$PEM_FILE" | tr -d '\n')
+
 sam build
+
+OVERRIDES="GitHubWebhookSecret=$WEBHOOK_SECRET GitHubAppId=$APP_ID GitHubInstallationId=$INSTALLATION_ID GitHubPrivateKey=$PRIVATE_KEY_B64 SlackWebhookUrl=$SLACK_URL"
 
 # samconfig.toml이 없으면 --guided로 첫 배포
 if [ ! -f samconfig.toml ]; then
   echo "📋 첫 배포입니다. 스택 설정을 진행합니다..."
   sam deploy --guided \
-    --parameter-overrides \
-      "GitHubWebhookSecret=$WEBHOOK_SECRET" \
-      "GitHubAppId=$APP_ID" \
-      "GitHubInstallationId=$INSTALLATION_ID" \
-      "GitHubPrivateKey=$(cat "$PEM_FILE")" \
-      "SlackWebhookUrl=$SLACK_URL"
+    --parameter-overrides $OVERRIDES
 else
   sam deploy \
-    --parameter-overrides \
-      "GitHubWebhookSecret=$WEBHOOK_SECRET" \
-      "GitHubAppId=$APP_ID" \
-      "GitHubInstallationId=$INSTALLATION_ID" \
-      "GitHubPrivateKey=$(cat "$PEM_FILE")" \
-      "SlackWebhookUrl=$SLACK_URL"
+    --parameter-overrides $OVERRIDES
 fi
