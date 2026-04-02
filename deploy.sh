@@ -50,11 +50,37 @@ sam build
 
 OVERRIDES="GitHubWebhookSecret=$WEBHOOK_SECRET GitHubAppId=$APP_ID GitHubInstallationId=$INSTALLATION_ID GitHubPrivateKey=$PRIVATE_KEY_B64 SlackWebhookUrl=$SLACK_URL"
 
-# samconfig.toml이 없으면 --guided로 첫 배포
+# samconfig.toml이 없으면 스택 설정도 입력받기
 if [ ! -f samconfig.toml ]; then
   echo "📋 첫 배포입니다. 스택 설정을 진행합니다..."
-  sam deploy --guided \
+  read -p "Stack Name [pr-review-bot]: " STACK_NAME
+  STACK_NAME=${STACK_NAME:-pr-review-bot}
+  read -p "AWS Region [ap-northeast-2]: " REGION
+  REGION=${REGION:-ap-northeast-2}
+
+  sam deploy \
+    --stack-name "$STACK_NAME" \
+    --region "$REGION" \
+    --resolve-s3 \
+    --capabilities CAPABILITY_IAM \
+    --no-confirm-changeset \
     --parameter-overrides $OVERRIDES
+
+  # samconfig.toml 생성 (재배포 시 사용)
+  cat > samconfig.toml <<EOF
+version = 0.1
+
+[default.deploy.parameters]
+stack_name = "$STACK_NAME"
+resolve_s3 = true
+s3_prefix = "$STACK_NAME"
+confirm_changeset = true
+capabilities = "CAPABILITY_IAM"
+region = "$REGION"
+parameter_overrides = "GitHubWebhookSecret=\"$WEBHOOK_SECRET\" GitHubAppId=\"$APP_ID\" GitHubInstallationId=\"$INSTALLATION_ID\" SlackWebhookUrl=\"$SLACK_URL\""
+image_repositories = []
+EOF
+  echo "📝 samconfig.toml 생성 완료 (다음 배포부터 이전 값이 기본값으로 표시됩니다)"
 else
   sam deploy \
     --parameter-overrides $OVERRIDES
