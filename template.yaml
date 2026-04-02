@@ -11,10 +11,10 @@ Parameters:
     Type: String
     Description: GitHub App ID
 
-  GitHubPrivateKeyParam:
+  GitHubPrivateKey:
     Type: String
-    Default: /pr-review-bot/github-private-key
-    Description: SSM Parameter Store name for GitHub App private key
+    NoEcho: true
+    Description: GitHub App private key (.pem content)
 
   GitHubInstallationId:
     Type: String
@@ -41,6 +41,16 @@ Globals:
     Architectures: [arm64]
 
 Resources:
+  # ---------------------------
+  # SSM Parameter Store
+  # ---------------------------
+  GitHubPrivateKeyParam:
+    Type: AWS::SSM::Parameter
+    Properties:
+      Name: /pr-review-bot/github-private-key
+      Type: String
+      Value: !Ref GitHubPrivateKey
+
   # ---------------------------
   # Dispatcher Lambda
   # ---------------------------
@@ -80,7 +90,7 @@ Resources:
       Environment:
         Variables:
           GITHUB_APP_ID: !Ref GitHubAppId
-          GITHUB_PRIVATE_KEY_PARAM: !Ref GitHubPrivateKeyParam
+          GITHUB_PRIVATE_KEY_PARAM: /pr-review-bot/github-private-key
           GITHUB_INSTALLATION_ID: !Ref GitHubInstallationId
           BEDROCK_MODEL_ID: !Ref BedrockModelId
           BEDROCK_MAX_TOKENS: !Ref BedrockMaxTokens
