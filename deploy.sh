@@ -12,13 +12,32 @@ fi
 echo "🔑 사용할 .pem 파일: $PEM_FILE"
 echo ""
 
-# 필수 파라미터 입력
-read -p "GitHub Webhook Secret: " WEBHOOK_SECRET
-read -p "GitHub App ID: " APP_ID
-read -p "GitHub Installation ID: " INSTALLATION_ID
+# samconfig.toml에서 이전 파라미터 값 읽기
+get_prev() {
+  local key=$1
+  if [ -f samconfig.toml ]; then
+    grep -o "${key}=[^ \"]*" samconfig.toml | head -1 | cut -d= -f2-
+  fi
+}
 
-# 선택 파라미터
-read -p "Slack Webhook URL (없으면 Enter): " SLACK_URL
+# 이전 값이 있으면 기본값으로 표시
+read_with_default() {
+  local prompt=$1
+  local default=$2
+  if [ -n "$default" ]; then
+    read -p "${prompt} [${default}]: " value
+    echo "${value:-$default}"
+  else
+    read -p "${prompt}: " value
+    echo "$value"
+  fi
+}
+
+# 파라미터 입력 (이전 값 기본값으로 표시)
+WEBHOOK_SECRET=$(read_with_default "GitHub Webhook Secret" "$(get_prev GitHubWebhookSecret)")
+APP_ID=$(read_with_default "GitHub App ID" "$(get_prev GitHubAppId)")
+INSTALLATION_ID=$(read_with_default "GitHub Installation ID" "$(get_prev GitHubInstallationId)")
+SLACK_URL=$(read_with_default "Slack Webhook URL (없으면 Enter)" "$(get_prev SlackWebhookUrl)")
 
 echo ""
 echo "🚀 빌드 및 배포 시작..."
