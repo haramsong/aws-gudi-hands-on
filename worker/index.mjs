@@ -84,63 +84,58 @@ function buildSummary(comments) {
   return body;
 }
 
-// 두 줄이 같은 코드의 원본/수정 관계인지 판별 (공백 제거 후 공통 토큰 비율)
-function linesRelated(original, suggestion) {
-  const a = original.replace(/\s+/g, "");
-  const b = suggestion.replace(/\s+/g, "");
-  if (!a || !b) return false;
-  const shorter = a.length < b.length ? a : b;
-  const longer = a.length < b.length ? b : a;
-  // 짧은 쪽 문자의 절반 이상이 긴 쪽에 포함되면 관련 있다고 판단
-  let match = 0;
-  for (const ch of shorter) {
-    if (longer.includes(ch)) match++;
-  }
-  return match / shorter.length > 0.5;
-}
-
-// diff를 파일별로 파싱 → [{ path, chunks: [{ startLine, lines }] }]
+// diff를 파일별로 파싱 → [{ path, rows: [{ oldLine, newLine, type, content }] }]
+// type: "context" | "add" | "delete"
 function parseDiff(diff) {
   const files = [];
   let current = null;
+  let oldLine = 0, newLine = 0;
 
   for (const line of diff.split("\n")) {
-    // 새 파일 시작
     if (line.startsWith("diff --git")) {
       current = null;
       continue;
     }
-    // 변경된 파일 경로
     if (line.startsWith("+++ b/")) {
-      current = { path: line.slice(6), chunks: [] };
+      current = { path: line.slice(6), rows: [] };
       files.push(current);
       continue;
     }
-    // 헝크(hunk) 헤더: @@ -old,count +new,count @@
-    const hunkMatch = line.match(/^@@ -\d+(?:,\d+)? \+(\d+)/);
+    const hunkMatch = line.match(/^@@ -(\d+)(?:,\d+)? \+(\d+)/);
     if (hunkMatch && current) {
-      current.chunks.push({ startLine: parseInt(hunkMatch[1]), lines: [] });
+      oldLine = parseInt(hunkMatch[1]);
+      newLine = parseInt(hunkMatch[2]);
       continue;
     }
-    // 헝크 내부 라인 수집 (삭제 라인 제외)
-    if (current?.chunks.length > 0 && !line.startsWith("-")) {
-      current.chunks.at(-1).lines.push(line);
+    if (!current) continue;
+
+    if (line.startsWith("-")) {
+      current.rows.push({ oldLine, newLine: null, type: "delete", content: line.slice(1) });
+      oldLine++;
+    } else if (line.startsWith("+")) {
+      current.rows.push({ oldLine: null, newLine, type: "add", content: line.slice(1) });
+      newLine++;
+    } else if (line.startsWith(" ")) {
+      current.rows.push({ oldLine, newLine, type: "context", content: line.slice(1) });
+      oldLine++;
+      newLine++;
     }
   }
   return files;
 }
 
-// 파일별 diff에서 특정 라인의 실제 줄번호 계산
-function getLineNumber(chunk, indexInChunk) {
-  let lineNum = chunk.startLine;
-  for (let i = 0; i < indexInChunk; i++) {
-    if (!chunk.lines[i].startsWith("-")) lineNum++;
-  }
-  return lineNum;
+// diff rows를 LLM용 annotated 형식으로 변환
+// 각 줄에 [L{line}] 또는 [R{line}] 접두사를 붙여 LLM이 라인 번호를 직접 읽도록 함
+function buildAnnotatedDiff(rows) {
+  return rows.map((r) => {
+    if (r.type === "delete") return `[L${r.oldLine}] -${r.content}`;
+    if (r.type === "add") return `[R${r.newLine}] +${r.content}`;
+    return `[L${r.oldLine}|R${r.newLine}]  ${r.content}`;
+  }).join("\n");
 }
 
 // Bedrock에 파일 단위로 리뷰 요청 → JSON 배열 응답
-async function reviewFile(filePath, diff) {
+async function reviewFile(filePath, annotatedDiff) {
   const res = await bedrock.send(new ConverseCommand({
     modelId: process.env.BEDROCK_MODEL_ID,
     system: [{
@@ -150,53 +145,52 @@ async function reviewFile(filePath, diff) {
 - 버그, 보안 취약점, 성능 문제, 가독성 개선점을 찾아주세요.
 - 문제가 없으면 빈 배열 []을 반환하세요.
 
+## 입력 형식
+diff의 각 줄에는 라인 번호가 접두사로 붙어 있습니다:
+- [L숫자] -코드 → 삭제된 줄 (LEFT side, 원본 파일의 라인 번호)
+- [R숫자] +코드 → 추가된 줄 (RIGHT side, 변경 파일의 라인 번호)
+- [L숫자|R숫자]  코드 → 컨텍스트 줄 (양쪽 라인 번호)
+
 ## 출력 형식
 반드시 아래 JSON 배열만 출력하세요. 다른 텍스트는 절대 포함하지 마세요.
 [
   {
-    "line": 해당_줄번호,
-    "body": "이모지 무엇이 문제인지 설명\\n\\n\`\`\`suggestion\\n수정된 코드\\n\`\`\`"
+    "line": 접두사에_표시된_라인번호,
+    "side": "RIGHT" 또는 "LEFT",
+    "body": "이모지 설명\\n\\n\`\`\`suggestion\\n수정된 코드\\n\`\`\`"
   }
 ]
 
+## line과 side 규칙
+- 추가된 줄(+)에 코멘트: line = [R숫자]의 숫자, side = "RIGHT"
+- 삭제된 줄(-)에 코멘트: line = [L숫자]의 숫자, side = "LEFT"
+- 컨텍스트 줄에 코멘트: line = [R숫자]의 숫자, side = "RIGHT"
+- 접두사에 있는 숫자를 그대로 사용하세요. 직접 계산하지 마세요.
+
+## 멀티라인 코멘트 (선택)
+여러 줄에 걸친 이슈는 start_line과 start_side를 추가하세요:
+{
+  "start_line": 시작_줄번호,
+  "start_side": "RIGHT" 또는 "LEFT",
+  "line": 끝_줄번호,
+  "side": "RIGHT" 또는 "LEFT",
+  "body": "..."
+}
+
 ## body 작성 규칙
-1. 첫 줄: 카테고리 이모지 + 문제점 또는 개선점을 명확히 설명
-2. 수정이 필요한 경우: 빈 줄 후 suggestion 블록 추가
-3. 단순 코멘트만 필요한 경우: suggestion 블록 생략
+1. 첫 줄: 카테고리 이모지 + 문제점 설명
+2. 수정 필요 시: 빈 줄 후 suggestion 블록 추가
+3. suggestion 블록은 RIGHT side 줄에만 사용 가능
 
 카테고리 이모지:
   🐛 버그/오류  🔒 보안 이슈  ⚡ 성능 개선  🧹 코드 스타일  💡 제안  ✅ 좋은 코드
 
-### 예시
-{ "line": 10, "body": "🔒 사용자 입력을 검증 없이 쿼리에 직접 사용하고 있어 SQL Injection 위험이 있습니다.\\n\\n\`\`\`suggestion\\nconst result = await db.query('SELECT * FROM users WHERE id = ?', [userId]);\\n\`\`\`" }
-{ "line": 25, "body": "🧹 변수명이 모호합니다. 역할을 명확히 드러내는 이름이 좋습니다.\\n\\n\`\`\`suggestion\\nconst maxRetryCount = 3;\\n\`\`\`" }
-{ "line": 42, "body": "✅ 에러 핸들링이 잘 되어 있습니다." }
-
-## 라인 번호 계산 규칙
-- diff의 @@ -a,b +c,d @@ 헤더에서 +c가 해당 hunk의 시작 라인 번호입니다.
-- 헤더 다음 줄부터 카운트하되, -로 시작하는 줄(삭제)은 건너뜁니다.
-- 공백으로 시작하는 줄(컨텍스트)과 +로 시작하는 줄(추가)만 라인 번호가 증가합니다.
-- diff를 비교할 때 -로 시작하는 줄 앞으로 두 라인, +로 끝나는 줄 뒤로 두 라인을 같이 첨부해주세요.
-- "line" 값은 반드시 이 계산으로 나온 번호만 사용하세요.
-
 ## 주의사항
 - suggestion 블록 안에는 해당 줄을 대체할 코드만 넣으세요.
-
-## 라인 번호 계산 예시
-아래 diff에서 각 줄의 라인 번호를 계산하면:
-\`\`\`diff
-@@ -51,7 +51,7 @@ export async function generateMetadata({
-   return getMetadata({                               ← 라인 51 (공백 시작, 컨텍스트)
-     title: \\\`[\${removeKebab(category)}] \${post.title}\\\`,  ← 라인 52
-     asPath: \\\`/posts/\${section}/\${category}/\${slug}\\\`,   ← 라인 53
--    description: post.summary,                       ← 삭제 줄, 건너뜀 (라인 번호 증가 안 함)
-+    description: post.sumary,                        ← 라인 54 (추가 줄)
-     ogImage: post.thumbnail,                         ← 라인 55
-\`\`\`
-→ \`post.sumary\` 오타는 "line": 54 입니다. 53도 55도 아닙니다.` }],
+- 삭제 줄(LEFT)에는 suggestion 블록을 사용하지 마세요.` }],
     messages: [{
       role: "user",
-      content: [{ text: `파일: ${filePath}\n\n\`\`\`diff\n${diff}\n\`\`\`` }],
+      content: [{ text: `파일: ${filePath}\n\n${annotatedDiff}` }],
     }],
     inferenceConfig: { maxTokens: parseInt(process.env.BEDROCK_MAX_TOKENS) || 4096 },
   }));
@@ -228,7 +222,6 @@ export const handler = async (event) => {
 
   const octokit = await createOctokit();
 
-  // /review 코멘트 경유 시 headSha가 없으므로 PR에서 조회
   if (!headSha) {
     const pr = await octokit.rest.pulls.get({ owner, repo, pull_number: prNumber });
     headSha = pr.data.head.sha;
@@ -237,7 +230,6 @@ export const handler = async (event) => {
   const checkRunId = await createCheck(octokit, owner, repo, headSha);
 
   try {
-    // PR diff 가져오기
     const diffRes = await octokit.rest.pulls.get({
       owner, repo, pull_number: prNumber,
       mediaType: { format: "diff" },
@@ -246,61 +238,56 @@ export const handler = async (event) => {
     const files = parseDiff(diffRes.data);
     const comments = [];
 
-    // 파일별로 Bedrock 리뷰 요청
     for (const file of files) {
-      // 파일별 diff 텍스트 재구성
-      const fileDiff = diffRes.data
-        .split("diff --git")
-        .find((s) => s.includes(`+++ b/${file.path}`));
-      if (!fileDiff) continue;
-
-      // diff 라인번호 → 내용 맵
-      const lineMap = new Map();
-      for (const chunk of file.chunks) {
-        let lineNum = chunk.startLine;
-        for (const l of chunk.lines) {
-          const content = l.startsWith("+") ? l.slice(1) : l.startsWith(" ") ? l.slice(1) : l;
-          lineMap.set(lineNum, content);
-          lineNum++;
+      // diff row 기반 유효 라인 셋 구축 (side별)
+      const validLines = { RIGHT: new Map(), LEFT: new Map() };
+      for (const row of file.rows) {
+        if (row.type === "add" || row.type === "context") {
+          validLines.RIGHT.set(row.newLine, row.content);
+        }
+        if (row.type === "delete") {
+          validLines.LEFT.set(row.oldLine, row.content);
+        }
+        if (row.type === "context") {
+          validLines.LEFT.set(row.oldLine, row.content);
         }
       }
 
-      const reviews = await reviewFile(file.path, fileDiff.slice(0, 10000));
+      const annotatedDiff = buildAnnotatedDiff(file.rows);
+      if (!annotatedDiff) continue;
+
+      const reviews = await reviewFile(file.path, annotatedDiff.slice(0, 10000));
 
       for (const r of reviews) {
         if (!r.line || !r.body) continue;
 
-        let targetLine = r.line;
+        const side = r.side === "LEFT" ? "LEFT" : "RIGHT";
+        const sideMap = validLines[side];
 
-        // suggestion에서 수정 후 코드 추출 → 원본 줄과 비교하여 라인 보정
-        const sugMatch = r.body.match(/```suggestion\n([\s\S]*?)\n```/);
-        if (sugMatch) {
-          const sugCode = sugMatch[1].trimEnd();
-          const currentContent = (lineMap.get(targetLine) ?? "").trimEnd();
-
-          // suggestion(수정 후)과 현재 줄이 동일하면 → 이미 맞는 줄을 가리키고 있으므로 보정 필요
-          // 또는 현재 줄과 suggestion이 전혀 관련 없으면 보정 필요
-          if (currentContent === sugCode || !linesRelated(currentContent, sugCode)) {
-            for (const offset of [1, -1, 2, -2]) {
-              const nearby = (lineMap.get(targetLine + offset) ?? "").trimEnd();
-              if (nearby !== sugCode && linesRelated(nearby, sugCode)) {
-                console.log(`[FIX] ${file.path}:${targetLine} → ${targetLine + offset} (라인 보정)`);
-                targetLine += offset;
-                break;
-              }
-            }
-          }
+        // LLM이 반환한 라인이 diff 범위 내인지 검증
+        if (!sideMap.has(r.line)) {
+          console.warn(`[SKIP] ${file.path}:${r.line} (${side}) — diff 범위 밖`);
+          continue;
         }
 
-        if (lineMap.has(targetLine)) {
-          comments.push({ path: file.path, line: targetLine, body: r.body });
-        } else {
-          console.warn(`[WARN] ${file.path}:${r.line} — diff 범위 밖이라 코멘트 제외`);
+        // suggestion이 LEFT에 달려있으면 suggestion 제거 (GitHub에서 LEFT suggestion 불가)
+        let body = r.body;
+        if (side === "LEFT") {
+          body = body.replace(/\n?\n?```suggestion\n[\s\S]*?\n```/, "");
         }
+
+        const comment = { path: file.path, line: r.line, side, body, subject_type: "file" };
+
+        // 멀티라인 지원
+        if (r.start_line && r.start_line < r.line) {
+          comment.start_line = r.start_line;
+          comment.start_side = r.start_side === "LEFT" ? "LEFT" : side;
+        }
+
+        comments.push(comment);
       }
     }
 
-    // PR에 인라인 리뷰 코멘트 게시
     const summaryBody = buildSummary(comments);
     await octokit.rest.pulls.createReview({
       owner, repo, pull_number: prNumber,
