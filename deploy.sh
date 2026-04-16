@@ -70,6 +70,10 @@ if [ ! -f samconfig.toml ]; then
     --parameter-overrides $OVERRIDES
 
   # samconfig.toml 생성 (재배포 시 사용)
+  PARAM_LINE="GitHubWebhookSecret=\\\"$WEBHOOK_SECRET\\\" GitHubAppId=\\\"$APP_ID\\\" GitHubInstallationId=\\\"$INSTALLATION_ID\\\""
+  if [ -n "$SLACK_URL" ]; then
+    PARAM_LINE="$PARAM_LINE SlackWebhookUrl=\\\"$SLACK_URL\\\""
+  fi
   cat > samconfig.toml <<EOF
 version = 0.1
 
@@ -80,7 +84,7 @@ s3_prefix = "$STACK_NAME"
 confirm_changeset = true
 capabilities = "CAPABILITY_IAM"
 region = "$REGION"
-parameter_overrides = "GitHubWebhookSecret=\"$WEBHOOK_SECRET\" GitHubAppId=\"$APP_ID\" GitHubInstallationId=\"$INSTALLATION_ID\"${SLACK_URL:+ SlackWebhookUrl=\"$SLACK_URL\"}"
+parameter_overrides = "$PARAM_LINE"
 image_repositories = []
 EOF
   echo "📝 samconfig.toml 생성 완료 (다음 배포부터 이전 값이 기본값으로 표시됩니다)"
