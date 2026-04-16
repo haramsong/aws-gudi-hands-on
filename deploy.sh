@@ -48,7 +48,10 @@ PRIVATE_KEY_B64=$(base64 < "$PEM_FILE" | tr -d '\n')
 
 sam build
 
-OVERRIDES="GitHubWebhookSecret=$WEBHOOK_SECRET GitHubAppId=$APP_ID GitHubInstallationId=$INSTALLATION_ID GitHubPrivateKey=$PRIVATE_KEY_B64 SlackWebhookUrl=$SLACK_URL"
+OVERRIDES="GitHubWebhookSecret=$WEBHOOK_SECRET GitHubAppId=$APP_ID GitHubInstallationId=$INSTALLATION_ID GitHubPrivateKey=$PRIVATE_KEY_B64"
+if [ -n "$SLACK_URL" ]; then
+  OVERRIDES="$OVERRIDES SlackWebhookUrl=$SLACK_URL"
+fi
 
 # samconfig.toml이 없으면 스택 설정도 입력받기
 if [ ! -f samconfig.toml ]; then
@@ -77,7 +80,7 @@ s3_prefix = "$STACK_NAME"
 confirm_changeset = true
 capabilities = "CAPABILITY_IAM"
 region = "$REGION"
-parameter_overrides = "GitHubWebhookSecret=\"$WEBHOOK_SECRET\" GitHubAppId=\"$APP_ID\" GitHubInstallationId=\"$INSTALLATION_ID\" SlackWebhookUrl=\"$SLACK_URL\""
+parameter_overrides = "GitHubWebhookSecret=\"$WEBHOOK_SECRET\" GitHubAppId=\"$APP_ID\" GitHubInstallationId=\"$INSTALLATION_ID\"${SLACK_URL:+ SlackWebhookUrl=\"$SLACK_URL\"}"
 image_repositories = []
 EOF
   echo "📝 samconfig.toml 생성 완료 (다음 배포부터 이전 값이 기본값으로 표시됩니다)"
